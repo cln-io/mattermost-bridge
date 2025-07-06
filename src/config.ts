@@ -59,7 +59,7 @@ export function loadConfig(): Config {
   const updateDmChannelHeader = process.env.UPDATE_DM_CHANNEL_HEADER === 'true';
   const disableEmoji = process.env.DISABLE_EMOJI === 'true';
   if (updateDmChannelHeader) {
-    console.log(`${LOG_PREFIX} ${emoji('📬')}DM channel header updates enabled - status will appear in your private message channel`.trim());
+    console.log(`${LOG_PREFIX} ${emoji('📬')}Status channel updates enabled - status will appear in #mattermost-bridge-status private channel`.trim());
   }
 
   // Parse dry-run mode

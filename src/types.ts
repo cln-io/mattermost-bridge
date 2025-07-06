@@ -21,7 +21,7 @@ export interface LoggingConfig {
   level: 'debug' | 'info' | 'warn' | 'error';
   debugWebSocketEvents: boolean;
   eventSummaryIntervalMinutes: number; // New field for event summary interval
-  updateDmChannelHeader: boolean; // New field for DM channel header updates
+  updateDmChannelHeader: boolean; // Enable status updates in #mattermost-bridge-status private channel
   disableEmoji: boolean; // Disable emojis in console output
 }
 

@@ -9,7 +9,7 @@ export class MattermostClient {
   private token: string = '';
   private ws: WebSocket | null = null;
   private userId: string = '';
-  private dmChannelId: string = '';
+  private statusChannelId: string = '';
   private readonly LOG_PREFIX = '[mattermost-client]';
   
   // Event tracking for summary
@@ -116,14 +116,12 @@ export class MattermostClient {
       console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
     }
     
-    // Update DM channel header with status if we have a DM channel
-    if (this.dmChannelId) {
+    // Update status message in status channel if we have one
+    if (this.statusChannelId) {
       try {
-        const timestamp = now.toLocaleString();
-        const headerText = `MMSync Status [${timestamp}]: ${summaryText}`;
-        await this.updateChannelHeader(this.dmChannelId, headerText);
+        await this.postOrUpdateStatusMessage(this.statusChannelId, summaryText);
       } catch (error) {
-        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to update DM channel header:`, error);
+        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to update status message:`, error);
       }
     }
     
@@ -193,35 +191,32 @@ export class MattermostClient {
       
       console.log(`${this.LOG_PREFIX} ✅ Successfully logged in to ${this.config.name} as ${response.data.username}`);
       
-      // Set up DM channel for status updates if enabled and user is not a bot (only for destination)
+      // Set up status channel for status updates if enabled and user is not a bot (only for destination)
       if (this.loggingConfig.updateDmChannelHeader && this.isDestination) {
         if (response.data.is_bot) {
-          console.log(`${this.LOG_PREFIX} 🤖 [${this.config.name}] Bot account detected - DM channel header updates disabled`);
+          console.log(`${this.LOG_PREFIX} 🤖 [${this.config.name}] Bot account detected - status channel updates disabled`);
         } else {
           try {
-            const dmChannel = await this.getDirectMessageChannel(this.userId);
-            if (dmChannel) {
-              this.dmChannelId = dmChannel.id;
-              console.log(`${this.LOG_PREFIX} 📬 [${this.config.name}] DM channel header updates enabled: ${this.dmChannelId}`);
+            const statusChannel = await this.findOrCreateStatusChannel();
+            if (statusChannel) {
+              this.statusChannelId = statusChannel.id;
+              console.log(`${this.LOG_PREFIX} 📬 [${this.config.name}] Status channel updates enabled: ${this.statusChannelId}`);
               
-              // Set initial "all good" status immediately
+              // Post or update initial status message
               try {
-                const timestamp = new Date().toLocaleString();
-                const headerText = `MMSync Status [${timestamp}]: ✅ All good - awaiting status updates`;
-                await this.updateChannelHeader(this.dmChannelId, headerText);
-                console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Initial DM channel header set: "All good - awaiting status updates"`);
+                await this.postOrUpdateStatusMessage(this.statusChannelId, '✅ All good - awaiting status updates');
               } catch (error) {
-                console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set initial DM channel header:`, error);
+                console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to post initial status message:`, error);
               }
             } else {
-              console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Could not find DM channel - header updates disabled`);
+              console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Could not find or create status channel - status updates disabled`);
             }
           } catch (error) {
-            console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set up DM channel for header updates:`, error);
+            console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set up status channel:`, error);
           }
         }
       } else {
-        console.log(`${this.LOG_PREFIX} ℹ️ [${this.config.name}] DM channel header updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`);
+        console.log(`${this.LOG_PREFIX} ℹ️ [${this.config.name}] Status channel updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`);
       }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} ❌ Login failed for ${this.config.name}:`, error.response?.data || error.message);
@@ -310,14 +305,131 @@ export class MattermostClient {
     }
   }
 
-  async postMessage(channelId: string, message: string): Promise<void> {
+  async createPrivateChannel(name: string, displayName: string): Promise<Channel | null> {
     try {
-      await this.api.post('/posts', {
+      // First get teams to find the team ID
+      const teamsResponse = await this.api.get('/users/me/teams');
+      const teams = teamsResponse.data;
+      
+      if (teams.length === 0) {
+        throw new Error('No teams found');
+      }
+      
+      // Use the first team (you might want to make this configurable)
+      const teamId = teams[0].id;
+      
+      const response = await this.api.post('/channels', {
+        team_id: teamId,
+        name: name,
+        display_name: displayName,
+        type: 'P', // P = Private channel
+        purpose: 'Mattermost bridge status updates'
+      });
+      
+      return response.data;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error creating private channel:`, error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  async findOrCreateStatusChannel(): Promise<Channel | null> {
+    try {
+      // First try to find existing channel
+      const existingChannel = await this.getChannelByName('mattermost-bridge-status');
+      if (existingChannel) {
+        console.log(`${this.LOG_PREFIX} 📋 [${this.config.name}] Found existing status channel: ${existingChannel.id}`);
+        return existingChannel;
+      }
+      
+      // Channel doesn't exist, create it
+      console.log(`${this.LOG_PREFIX} 📋 [${this.config.name}] Creating new status channel...`);
+      const newChannel = await this.createPrivateChannel('mattermost-bridge-status', 'mattermost-bridge-status');
+      
+      if (newChannel) {
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Created status channel: ${newChannel.id}`);
+      }
+      
+      return newChannel;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error finding or creating status channel:`, error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  async postMessage(channelId: string, message: string): Promise<any> {
+    try {
+      const response = await this.api.post('/posts', {
         channel_id: channelId,
         message: message
       });
+      return response.data;
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting message:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async updateMessage(postId: string, message: string): Promise<void> {
+    try {
+      await this.api.put(`/posts/${postId}`, {
+        id: postId,
+        message: message
+      });
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error updating message:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getChannelPosts(channelId: string, page: number = 0, perPage: number = 60): Promise<any> {
+    try {
+      const response = await this.api.get(`/channels/${channelId}/posts?page=${page}&per_page=${perPage}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error getting channel posts:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async findStatusMessage(channelId: string): Promise<any | null> {
+    try {
+      const posts = await this.getChannelPosts(channelId);
+      
+      // Look for posts by the current user that contain "MMSync Status"
+      for (const postId of posts.order) {
+        const post = posts.posts[postId];
+        if (post.user_id === this.userId && post.message.includes('MMSync Status')) {
+          return post;
+        }
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error finding status message:`, error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  async postOrUpdateStatusMessage(channelId: string, statusText: string): Promise<void> {
+    try {
+      const timestamp = new Date().toLocaleString();
+      const fullMessage = `🤖 **MMSync Status [${timestamp}]**: ${statusText}`;
+      
+      // Try to find existing status message
+      const existingPost = await this.findStatusMessage(channelId);
+      
+      if (existingPost) {
+        // Update existing message
+        await this.updateMessage(existingPost.id, fullMessage);
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated status message: "${statusText}"`);
+      } else {
+        // Post new message
+        await this.postMessage(channelId, fullMessage);
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Posted new status message: "${statusText}"`);
+      }
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error posting or updating status message:`, error.response?.data || error.message);
       throw error;
     }
   }
