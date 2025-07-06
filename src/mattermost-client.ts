@@ -19,7 +19,7 @@ export class MattermostClient {
   private nextEventSummaryTime: Date | null = null;
   private eventSummaryCount: number = 0;
 
-  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig) {
+  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false) {
     // Normalize server URL to prevent double slashes
     const normalizedServer = this.normalizeServerUrl(config.server);
     
@@ -193,8 +193,8 @@ export class MattermostClient {
       
       console.log(`${this.LOG_PREFIX} ✅ Successfully logged in to ${this.config.name} as ${response.data.username}`);
       
-      // Set up DM channel for status updates if enabled and user is not a bot
-      if (this.loggingConfig.updateDmChannelHeader) {
+      // Set up DM channel for status updates if enabled and user is not a bot (only for destination)
+      if (this.loggingConfig.updateDmChannelHeader && this.isDestination) {
         if (response.data.is_bot) {
           console.log(`${this.LOG_PREFIX} 🤖 [${this.config.name}] Bot account detected - DM channel header updates disabled`);
         } else {

@@ -18,8 +18,8 @@ export class MattermostBridge {
   private profilePictureCache: Map<string, string> = new Map();
 
   constructor(private config: Config) {
-    this.leftClient = new MattermostClient(config.left, config.logging);
-    this.rightClient = new MattermostClient(config.right, config.logging);
+    this.leftClient = new MattermostClient(config.left, config.logging, false);
+    this.rightClient = new MattermostClient(config.right, config.logging, true);
     this.heartbeatService = new HeartbeatService(config.heartbeat);
   }
 
