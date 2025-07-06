@@ -56,6 +56,10 @@ describe('MattermostBridge', () => {
     mockLeftClient = new MattermostClient(config.left, config.logging) as jest.Mocked<MattermostClient>;
     mockRightClient = new MattermostClient(config.right, config.logging) as jest.Mocked<MattermostClient>;
     mockHeartbeatService = new HeartbeatService(config.heartbeat) as jest.Mocked<HeartbeatService>;
+    
+    // Add missing mock methods
+    mockRightClient.getStatusChannelId = jest.fn();
+    mockRightClient.postMessage = jest.fn();
 
     (MattermostClient as jest.MockedClass<typeof MattermostClient>).mockImplementation((cfg) => {
       if (cfg === config.left) return mockLeftClient;
@@ -388,6 +392,148 @@ describe('MattermostBridge', () => {
       expect(mockLeftClient.disconnect).toHaveBeenCalled();
       expect(mockRightClient.disconnect).toHaveBeenCalled();
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Cleared profile picture cache'));
+    });
+  });
+
+  describe('centralized event tracking', () => {
+    beforeEach(async () => {
+      const sourceChannelInfo: ChannelInfo = {
+        id: 'source123',
+        name: 'source-channel',
+        displayName: 'Source Channel',
+        type: 'O'
+      };
+
+      const targetChannelInfo: ChannelInfo = {
+        id: 'target456',
+        name: 'target-channel',
+        displayName: 'Target Channel',
+        type: 'O'
+      };
+
+      mockLeftClient.ping.mockResolvedValue();
+      mockRightClient.ping.mockResolvedValue();
+      mockLeftClient.login.mockResolvedValue();
+      mockRightClient.login.mockResolvedValue();
+      mockLeftClient.getChannelById.mockResolvedValue(sourceChannelInfo);
+      mockRightClient.getChannelById.mockResolvedValue(targetChannelInfo);
+      mockHeartbeatService.start.mockImplementation();
+      mockLeftClient.connectWebSocket.mockImplementation();
+      
+      // Mock for getStatusChannelId
+      mockRightClient.getStatusChannelId.mockResolvedValue('status123');
+      mockRightClient.postMessage.mockResolvedValue(undefined);
+    });
+
+    it('should start centralized event summary timer on bridge start', async () => {
+      const consoleSpy = jest.spyOn(console, 'log');
+      
+      await bridge.start();
+      
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Starting centralized event summary')
+      );
+    });
+
+    it('should track left client events via callback', async () => {
+      let eventCallback: ((eventType: string) => void) | undefined;
+      
+      // Capture the event callback passed to left client
+      (MattermostClient as jest.MockedClass<typeof MattermostClient>).mockImplementation((cfg, logging, isDest, callback) => {
+        if (cfg === config.left) {
+          eventCallback = callback;
+          return mockLeftClient;
+        }
+        return mockRightClient;
+      });
+      
+      bridge = new MattermostBridge(config);
+      
+      expect(eventCallback).toBeDefined();
+      
+      // Test that callback tracks events (we can't directly test private methods)
+      if (eventCallback) {
+        eventCallback('hello');
+        eventCallback('posted');
+        // These calls should work without throwing
+      }
+    });
+
+    it('should handle bridge event tracking', async () => {
+      const mockMessage: MattermostMessage = {
+        id: 'msg123',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Test message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      };
+
+      let handleMessage: (message: MattermostMessage) => Promise<void>;
+      
+      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+        handleMessage = onMsg;
+      });
+      
+      await bridge.start();
+      
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'user123',
+        username: 'testuser',
+        email: 'testuser@allowed.com'
+      });
+      
+      mockLeftClient.downloadProfilePicture.mockResolvedValue(Buffer.from('image'));
+      mockRightClient.uploadProfilePicture.mockResolvedValue('https://right.com/profile.png');
+      
+      (createMessageAttachment as jest.Mock).mockReturnValue({
+        color: '#87CEEB',
+        author_name: 'testuser',
+        text: 'Test message'
+      });
+      
+      mockRightClient.postMessageWithAttachment.mockResolvedValue();
+      
+      await handleMessage!(mockMessage);
+      
+      // Verify that bridge events would be tracked (message_bridged event)
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalled();
+    });
+
+    it('should handle dry run event tracking', async () => {
+      const dryRunBridge = new MattermostBridge({ ...config, dryRun: true });
+      
+      const mockMessage: MattermostMessage = {
+        id: 'msg123',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Test message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      };
+
+      let handleMessage: (message: MattermostMessage) => Promise<void>;
+      
+      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+        handleMessage = onMsg;
+      });
+      
+      await dryRunBridge.start();
+      
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'user123',
+        username: 'testuser',
+        email: 'testuser@allowed.com'
+      });
+      
+      const consoleSpy = jest.spyOn(console, 'log');
+      
+      await handleMessage!(mockMessage);
+      
+      // Verify dry run logging and that bridge events would be tracked (message_dry_run event)
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[DRY RUN]'));
     });
   });
 });

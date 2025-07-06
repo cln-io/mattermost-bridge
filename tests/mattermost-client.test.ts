@@ -509,24 +509,6 @@ describe('MattermostClient', () => {
       expect(WebSocket).toHaveBeenCalledTimes(2);
     });
 
-    it('should track and log event summaries', () => {
-      const consoleSpy = jest.spyOn(console, 'log');
-      client.connectWebSocket('channel123', onMessage);
-      wsOpenHandler();
-
-      // Send various events
-      wsMessageHandler(JSON.stringify({ event: 'posted', data: {} }));
-      wsMessageHandler(JSON.stringify({ event: 'typing', data: {} }));
-      wsMessageHandler(JSON.stringify({ event: 'typing', data: {} }));
-      wsMessageHandler(JSON.stringify({ event: 'status_change', data: {} }));
-
-      // Fast forward to trigger event summary
-      jest.advanceTimersByTime(10 * 60 * 1000);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Summary #1')
-      );
-    });
 
     it('should handle debug mode for WebSocket events', () => {
       loggingConfig.debugWebSocketEvents = true;
