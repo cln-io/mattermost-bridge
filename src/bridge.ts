@@ -129,6 +129,8 @@ export class MattermostBridge {
         
         if (shouldExclude) {
           console.log(`${this.LOG_PREFIX} 🚫 Message from ${user.username} (${user.email}) excluded due to email domain filter`);
+          // Track excluded message for status updates
+          this.rightClient.trackBridgeEvent('message_excluded');
           return; // Skip this message
         }
       }
@@ -215,6 +217,9 @@ export class MattermostBridge {
           console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] File Attachments: ${uploadedFileIds.length} file(s)`);
         }
         console.log(`${this.LOG_PREFIX} 🏃‍♂️ [DRY RUN] Message NOT sent (dry-run mode)`);
+        
+        // Track dry run event for status updates
+        this.rightClient.trackBridgeEvent('message_dry_run');
       } else {
         // Post message with attachment and files
         await this.rightClient.postMessageWithAttachment(
@@ -226,6 +231,9 @@ export class MattermostBridge {
         
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
         console.log(`${this.LOG_PREFIX} ✅ Message bridged to #${targetChannelName} on ${this.config.right.name}${fileInfo}`);
+        
+        // Track message bridging event on destination client for status updates
+        this.rightClient.trackBridgeEvent('message_bridged');
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ❌ Error bridging message:`, error);

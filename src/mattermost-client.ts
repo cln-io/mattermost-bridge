@@ -134,6 +134,10 @@ export class MattermostClient {
     this.eventCounts.set(eventType, (this.eventCounts.get(eventType) || 0) + 1);
   }
 
+  public trackBridgeEvent(eventType: string): void {
+    this.trackEvent(eventType);
+  }
+
   async ping(): Promise<void> {
     try {
       const normalizedServer = this.normalizeServerUrl(this.config.server);
@@ -396,10 +400,10 @@ export class MattermostClient {
     try {
       const posts = await this.getChannelPosts(channelId);
       
-      // Look for posts by the current user that contain "MMSync Status"
+      // Look for posts by the current user that contain "mattermost-bridge-status"
       for (const postId of posts.order) {
         const post = posts.posts[postId];
-        if (post.user_id === this.userId && post.message.includes('MMSync Status')) {
+        if (post.user_id === this.userId && post.message.includes('mattermost-bridge-status')) {
           return post;
         }
       }
@@ -413,8 +417,8 @@ export class MattermostClient {
 
   async postOrUpdateStatusMessage(channelId: string, statusText: string): Promise<void> {
     try {
-      const timestamp = new Date().toLocaleString();
-      const fullMessage = `🤖 **MMSync Status [${timestamp}]**: ${statusText}`;
+      const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
+      const fullMessage = `🤖 **mattermost-bridge-status [${timestamp}]**: ${statusText}`;
       
       // Try to find existing status message
       const existingPost = await this.findStatusMessage(channelId);
