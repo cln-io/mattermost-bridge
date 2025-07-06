@@ -340,11 +340,9 @@ export class MattermostBridge {
       return;
     }
     
-    const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
-    const fullMessage = `📊 **Bridge Activity Summary [${timestamp}]**: ${summaryText}`;
-    
-    await this.rightClient.postMessage(statusChannelId, fullMessage);
-    console.log(`${this.LOG_PREFIX} ✅ Posted event summary to monitoring channel`);
+    // Use the new postOrUpdateBridgeSummary method to find and update existing message
+    await this.rightClient.postOrUpdateBridgeSummary(statusChannelId, summaryText);
+    console.log(`${this.LOG_PREFIX} ✅ Posted/updated bridge summary in monitoring channel`);
   }
 
   async stop(): Promise<void> {

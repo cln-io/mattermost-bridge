@@ -60,6 +60,7 @@ describe('MattermostBridge', () => {
     // Add missing mock methods
     mockRightClient.getStatusChannelId = jest.fn();
     mockRightClient.postMessage = jest.fn();
+    mockRightClient.postOrUpdateBridgeSummary = jest.fn();
 
     (MattermostClient as jest.MockedClass<typeof MattermostClient>).mockImplementation((cfg) => {
       if (cfg === config.left) return mockLeftClient;
@@ -423,6 +424,7 @@ describe('MattermostBridge', () => {
       // Mock for getStatusChannelId
       mockRightClient.getStatusChannelId.mockResolvedValue('status123');
       mockRightClient.postMessage.mockResolvedValue(undefined);
+      mockRightClient.postOrUpdateBridgeSummary.mockResolvedValue(undefined);
     });
 
     it('should start centralized event summary timer on bridge start', async () => {
@@ -534,6 +536,22 @@ describe('MattermostBridge', () => {
       
       // Verify dry run logging and that bridge events would be tracked (message_dry_run event)
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[DRY RUN]'));
+    });
+
+    it('should update existing bridge summary messages instead of creating new ones', async () => {
+      await bridge.start();
+      
+      // Create a mock for the logEventSummary method by triggering it manually
+      // We can't directly access private methods, but we can test the flow through the timer
+      
+      // Verify that the bridge uses postOrUpdateBridgeSummary instead of postMessage
+      const logEventSummary = (bridge as any).logEventSummary;
+      if (logEventSummary) {
+        await logEventSummary.call(bridge);
+        
+        // Should use the update method, not create new messages
+        expect(mockRightClient.postOrUpdateBridgeSummary).toHaveBeenCalled();
+      }
     });
   });
 });
