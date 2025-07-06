@@ -16,9 +16,16 @@ export class MattermostBridge {
   
   // Cache for uploaded profile pictures to avoid re-uploading
   private profilePictureCache: Map<string, string> = new Map();
+  
+  // Centralized event tracking
+  private leftEvents: Map<string, number> = new Map();
+  private bridgeEvents: Map<string, number> = new Map();
+  private eventSummaryTimer: NodeJS.Timeout | null = null;
+  private lastEventSummaryTime: Date = new Date();
+  private eventSummaryCount: number = 0;
 
   constructor(private config: Config) {
-    this.leftClient = new MattermostClient(config.left, config.logging, false, this.bridgeEventSummary.bind(this));
+    this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this));
     this.rightClient = new MattermostClient(config.right, config.logging, true);
     this.heartbeatService = new HeartbeatService(config.heartbeat);
   }
@@ -93,7 +100,10 @@ export class MattermostBridge {
       }
       console.log('');
 
-      // Step 6: Start heartbeat monitoring (only after successful connection)
+      // Step 6: Start centralized event tracking
+      this.startEventSummaryTimer();
+      
+      // Step 7: Start heartbeat monitoring (only after successful connection)
       this.heartbeatService.start();
       
     } catch (error) {
@@ -130,7 +140,7 @@ export class MattermostBridge {
         if (shouldExclude) {
           console.log(`${this.LOG_PREFIX} 🚫 Message from ${user.username} (${user.email}) excluded due to email domain filter`);
           // Track excluded message for status updates
-          this.rightClient.trackBridgeEvent('message_excluded');
+          this.trackBridgeEvent('message_excluded');
           return; // Skip this message
         }
       }
@@ -219,7 +229,7 @@ export class MattermostBridge {
         console.log(`${this.LOG_PREFIX} 🏃‍♂️ [DRY RUN] Message NOT sent (dry-run mode)`);
         
         // Track dry run event for status updates
-        this.rightClient.trackBridgeEvent('message_dry_run');
+        this.trackBridgeEvent('message_dry_run');
       } else {
         // Post message with attachment and files
         await this.rightClient.postMessageWithAttachment(
@@ -233,25 +243,113 @@ export class MattermostBridge {
         console.log(`${this.LOG_PREFIX} ✅ Message bridged to #${targetChannelName} on ${this.config.right.name}${fileInfo}`);
         
         // Track message bridging event on destination client for status updates
-        this.rightClient.trackBridgeEvent('message_bridged');
+        this.trackBridgeEvent('message_bridged');
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ❌ Error bridging message:`, error);
     }
   }
 
-  async bridgeEventSummary(summaryText: string, sourceName: string): Promise<void> {
-    try {
-      // Forward the event summary from left to right client's monitoring channel
-      await this.rightClient.postEventSummaryToMonitoring(summaryText, sourceName);
-      console.log(`${this.LOG_PREFIX} 📊 Event summary bridged from ${sourceName} to ${this.config.right.name}`);
-    } catch (error) {
-      console.error(`${this.LOG_PREFIX} ❌ Error bridging event summary:`, error);
+  private trackLeftEvent(eventType: string): void {
+    this.leftEvents.set(eventType, (this.leftEvents.get(eventType) || 0) + 1);
+  }
+
+  private trackBridgeEvent(eventType: string): void {
+    this.bridgeEvents.set(eventType, (this.bridgeEvents.get(eventType) || 0) + 1);
+  }
+
+  private startEventSummaryTimer(): void {
+    if (this.eventSummaryTimer) {
+      clearInterval(this.eventSummaryTimer);
     }
+
+    const intervalMinutes = this.config.logging.eventSummaryIntervalMinutes;
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    console.log(`${this.LOG_PREFIX} 📊 Starting centralized event summary (every ${intervalMinutes} minutes)`);
+    
+    this.eventSummaryTimer = setInterval(async () => {
+      await this.logEventSummary();
+    }, intervalMs);
+  }
+
+  private async stopEventSummaryTimer(): Promise<void> {
+    if (this.eventSummaryTimer) {
+      clearInterval(this.eventSummaryTimer);
+      this.eventSummaryTimer = null;
+      await this.logEventSummary();
+    }
+  }
+
+  private async logEventSummary(): Promise<void> {
+    const now = new Date();
+    const duration = Math.round((now.getTime() - this.lastEventSummaryTime.getTime()) / 1000);
+    this.eventSummaryCount++;
+    
+    const intervalMs = this.config.logging.eventSummaryIntervalMinutes * 60 * 1000;
+    const nextSummaryTime = new Date(now.getTime() + intervalMs);
+    const nextTimeStr = nextSummaryTime.toTimeString().split(' ')[0];
+    
+    // Generate summary sections
+    const leftSummary = this.generateEventSummary(this.leftEvents, 'Left');
+    const bridgeSummary = this.generateEventSummary(this.bridgeEvents, 'Bridge');
+    
+    let summaryText: string;
+    if (this.leftEvents.size === 0 && this.bridgeEvents.size === 0) {
+      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`;
+      console.log(`${this.LOG_PREFIX} 📊 ${summaryText}`);
+    } else {
+      const sections = [];
+      if (leftSummary) sections.push(leftSummary);
+      if (bridgeSummary) sections.push(bridgeSummary);
+      
+      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): ${sections.join(', ')} - next at ${nextTimeStr}`;
+      console.log(`${this.LOG_PREFIX} 📊 ${summaryText}`);
+    }
+    
+    // Post to monitoring channel on right client
+    if (this.rightClient && await this.rightClient.getStatusChannelId()) {
+      try {
+        await this.postEventSummaryToMonitoring(summaryText);
+      } catch (error) {
+        console.error(`${this.LOG_PREFIX} ❌ Failed to post event summary to monitoring:`, error);
+      }
+    }
+    
+    // Reset counters
+    this.leftEvents.clear();
+    this.bridgeEvents.clear();
+    this.lastEventSummaryTime = now;
+  }
+
+  private generateEventSummary(events: Map<string, number>, prefix: string): string {
+    if (events.size === 0) return '';
+    
+    const summary = Array.from(events.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([event, count]) => `${event}: ${count}`)
+      .join(', ');
+    
+    return `${prefix}: ${summary}`;
+  }
+
+  private async postEventSummaryToMonitoring(summaryText: string): Promise<void> {
+    const statusChannelId = await this.rightClient.getStatusChannelId();
+    if (!statusChannelId) {
+      console.log(`${this.LOG_PREFIX} ⚠️ No status channel available for event summary`);
+      return;
+    }
+    
+    const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
+    const fullMessage = `📊 **Bridge Activity Summary [${timestamp}]**: ${summaryText}`;
+    
+    await this.rightClient.postMessage(statusChannelId, fullMessage);
+    console.log(`${this.LOG_PREFIX} ✅ Posted event summary to monitoring channel`);
   }
 
   async stop(): Promise<void> {
     console.log(`${this.LOG_PREFIX} 🛑 Stopping bridge...`);
+    await this.stopEventSummaryTimer();
     this.heartbeatService.stop();
     await this.leftClient.disconnect();
     await this.rightClient.disconnect();

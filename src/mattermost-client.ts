@@ -12,14 +12,7 @@ export class MattermostClient {
   private statusChannelId: string = '';
   private readonly LOG_PREFIX = '[mattermost-client]';
   
-  // Event tracking for summary
-  private eventCounts: Map<string, number> = new Map();
-  private eventSummaryTimer: NodeJS.Timeout | null = null;
-  private lastEventSummaryTime: Date = new Date();
-  private nextEventSummaryTime: Date | null = null;
-  private eventSummaryCount: number = 0;
-
-  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventSummaryBridge?: (summaryText: string, sourceName: string) => Promise<void>) {
+  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventCallback?: (eventType: string) => void) {
     // Normalize server URL to prevent double slashes
     const normalizedServer = this.normalizeServerUrl(config.server);
     
@@ -62,90 +55,7 @@ export class MattermostClient {
     }
   }
 
-  private startEventSummaryTimer(): void {
-    // Clear any existing timer
-    if (this.eventSummaryTimer) {
-      clearInterval(this.eventSummaryTimer);
-    }
 
-    const intervalMinutes = this.loggingConfig.eventSummaryIntervalMinutes;
-    const intervalMs = intervalMinutes * 60 * 1000;
-
-    console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] Starting event summary timer (every ${intervalMinutes} minutes)`);
-    
-    // Calculate and log next summary time
-    this.nextEventSummaryTime = new Date(Date.now() + intervalMs);
-    console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] Next summary at: ${this.nextEventSummaryTime.toTimeString().split(' ')[0]}`);
-
-    // Log event summary at the configured interval
-    this.eventSummaryTimer = setInterval(async () => {
-      await this.logEventSummary();
-    }, intervalMs);
-  }
-
-  private async stopEventSummaryTimer(): Promise<void> {
-    if (this.eventSummaryTimer) {
-      clearInterval(this.eventSummaryTimer);
-      this.eventSummaryTimer = null;
-      // Log final summary before stopping
-      await this.logEventSummary();
-    }
-  }
-
-  private async logEventSummary(): Promise<void> {
-    const now = new Date();
-    const duration = Math.round((now.getTime() - this.lastEventSummaryTime.getTime()) / 1000);
-    this.eventSummaryCount++;
-    
-    // Calculate next summary time
-    const intervalMs = this.loggingConfig.eventSummaryIntervalMinutes * 60 * 1000;
-    this.nextEventSummaryTime = new Date(now.getTime() + intervalMs);
-    const nextTimeStr = this.nextEventSummaryTime.toTimeString().split(' ')[0]; // HH:MM:SS format
-    
-    let summaryText: string;
-    if (this.eventCounts.size === 0) {
-      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`;
-      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
-    } else {
-      const summary = Array.from(this.eventCounts.entries())
-        .sort((a, b) => b[1] - a[1]) // Sort by count descending
-        .map(([event, count]) => `${event}: ${count}`)
-        .join(', ');
-      
-      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): ${summary} - next at ${nextTimeStr}`;
-      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
-    }
-    
-    // Bridge event summary to right side if this is the source (left) client
-    if (!this.isDestination && this.eventSummaryBridge) {
-      try {
-        await this.eventSummaryBridge(summaryText, this.config.name);
-      } catch (error) {
-        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to bridge event summary:`, error);
-      }
-    }
-    
-    // Update status message in status channel if we have one (for destination only)
-    if (this.statusChannelId && this.isDestination) {
-      try {
-        await this.postOrUpdateStatusMessage(this.statusChannelId, summaryText);
-      } catch (error) {
-        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to update status message:`, error);
-      }
-    }
-    
-    // Reset counters
-    this.eventCounts.clear();
-    this.lastEventSummaryTime = now;
-  }
-
-  private trackEvent(eventType: string): void {
-    this.eventCounts.set(eventType, (this.eventCounts.get(eventType) || 0) + 1);
-  }
-
-  public trackBridgeEvent(eventType: string): void {
-    this.trackEvent(eventType);
-  }
 
   async ping(): Promise<void> {
     try {
@@ -447,24 +357,6 @@ export class MattermostClient {
     }
   }
 
-  async postEventSummaryToMonitoring(summaryText: string, sourceName: string): Promise<void> {
-    try {
-      if (!this.statusChannelId) {
-        console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] No status channel available for event summary from ${sourceName}`);
-        return;
-      }
-      
-      const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
-      const fullMessage = `📊 **[${sourceName}] Event Summary [${timestamp}]**: ${summaryText}`;
-      
-      // Post the event summary to the monitoring channel
-      await this.postMessage(this.statusChannelId, fullMessage);
-      console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Posted event summary from ${sourceName} to monitoring channel`);
-    } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} Error posting event summary to monitoring channel:`, error.response?.data || error.message);
-      throw error;
-    }
-  }
 
   async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[]): Promise<void> {
     try {
@@ -626,8 +518,6 @@ export class MattermostClient {
     this.ws.on('open', () => {
       console.log(`${this.LOG_PREFIX} 🔌 WebSocket connected to ${this.config.name}`);
       
-      // Start event summary timer after successful connection
-      this.startEventSummaryTimer();
       
       // Authenticate WebSocket
       this.ws?.send(JSON.stringify({
@@ -644,6 +534,11 @@ export class MattermostClient {
         const event = JSON.parse(data.toString());
         const eventType = event.event as string;
 
+        // Report event to bridge if callback is provided and this is the left client
+        if (eventType && this.eventCallback && !this.isDestination) {
+          this.eventCallback(eventType);
+        }
+
         // Log raw event JSON when debug mode is enabled
         if (this.loggingConfig.debugWebSocketEvents && eventType) {
           console.log(
@@ -652,10 +547,6 @@ export class MattermostClient {
           );
         }
 
-        // Track all events for summary
-        if (eventType) {
-          this.trackEvent(eventType);
-        }
 
         // Always log 'posted' (new message) and 'hello' events
         if (eventType === 'posted') {
@@ -763,11 +654,6 @@ export class MattermostClient {
     this.ws.on('close', async () => {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket connection closed`);
       
-      // Log final event summary before reconnecting
-      await this.logEventSummary();
-      
-      // Stop the timer
-      await this.stopEventSummaryTimer();
       
       // Reconnect after 5 seconds
       setTimeout(() => {
@@ -782,12 +668,10 @@ export class MattermostClient {
       this.ws.close();
       this.ws = null;
     }
-    // Stop event summary timer
-    await this.stopEventSummaryTimer();
   }
 
-  // Debug method to manually trigger event summary
-  async forceEventSummary(): Promise<void> {
-    await this.logEventSummary();
+  async getStatusChannelId(): Promise<string | null> {
+    return this.statusChannelId;
   }
+
 }
