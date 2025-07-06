@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { Config } from './types';
 import fs from 'fs';
 import path from 'path';
+import { emoji } from './logger-utils';
 
 const LOG_PREFIX = '[config           ]';
 
@@ -10,13 +11,13 @@ const envLocalPath = path.resolve(process.cwd(), '.env.local');
 const envPath = path.resolve(process.cwd(), '.env');
 
 if (fs.existsSync(envLocalPath)) {
-  console.log(`${LOG_PREFIX} 🔧 Loading configuration from .env.local (development mode)`);
+  console.log(`${LOG_PREFIX} ${emoji('🔧')}Loading configuration from .env.local (development mode)`.trim());
   dotenv.config({ path: envLocalPath });
 } else if (fs.existsSync(envPath)) {
-  console.log(`${LOG_PREFIX} 🔧 Loading configuration from .env`);
+  console.log(`${LOG_PREFIX} ${emoji('🔧')}Loading configuration from .env`.trim());
   dotenv.config({ path: envPath });
 } else {
-  console.log(`${LOG_PREFIX} 🔧 Loading configuration from environment variables`);
+  console.log(`${LOG_PREFIX} ${emoji('🔧')}Loading configuration from environment variables`.trim());
   // This will use process.env as-is, useful for Docker where env vars are set directly
   dotenv.config();
 }
@@ -56,14 +57,15 @@ export function loadConfig(): Config {
   const debugWebSocketEvents = process.env.DEBUG_WEBSOCKET_EVENTS === 'true';
   const eventSummaryIntervalMinutes = parseInt(process.env.EVENT_SUMMARY_INTERVAL_MINUTES || '10', 10);
   const updateDmChannelHeader = process.env.UPDATE_DM_CHANNEL_HEADER === 'true';
+  const disableEmoji = process.env.DISABLE_EMOJI === 'true';
   if (updateDmChannelHeader) {
-    console.log(`${LOG_PREFIX} 📬 DM channel header updates enabled - status will appear in your private message channel`);
+    console.log(`${LOG_PREFIX} ${emoji('📬')}DM channel header updates enabled - status will appear in your private message channel`.trim());
   }
 
   // Parse dry-run mode
   const dryRun = process.env.DRY_RUN === 'true';
   if (dryRun) {
-    console.log(`${LOG_PREFIX} 🏃‍♂️ DRY RUN MODE ENABLED - Messages will NOT be posted to target channel`);
+    console.log(`${LOG_PREFIX} ${emoji('🏃‍♂️')}DRY RUN MODE ENABLED - Messages will NOT be posted to target channel`.trim());
   }
 
   // Parse email exclusion list
@@ -71,25 +73,25 @@ export function loadConfig(): Config {
   if (process.env.DONT_FORWARD_FOR) {
     const domains = process.env.DONT_FORWARD_FOR.split(',').map(d => d.trim()).filter(d => d.length > 0);
     dontForwardFor.push(...domains);
-    console.log(`${LOG_PREFIX} 🚫 Email exclusion filter enabled for domains: ${domains.join(', ')}`);
-    console.log(`${LOG_PREFIX} 📧 Messages from users with these email domains will NOT be forwarded`);
+    console.log(`${LOG_PREFIX} ${emoji('🚫')}Email exclusion filter enabled for domains: ${domains.join(', ')}`.trim());
+    console.log(`${LOG_PREFIX} ${emoji('📧')}Messages from users with these email domains will NOT be forwarded`.trim());
   }
 
   // Parse footer icon configuration
   const footerIcon = process.env.FOOTER_ICON?.trim();
   if (footerIcon) {
-    console.log(`${LOG_PREFIX} 🎨 Custom footer icon configured: ${footerIcon}`);
+    console.log(`${LOG_PREFIX} ${emoji('🎨')}Custom footer icon configured: ${footerIcon}`.trim());
   } else {
-    console.log(`${LOG_PREFIX} 🎨 No footer icon configured (FOOTER_ICON is empty)`);
+    console.log(`${LOG_PREFIX} ${emoji('🎨')}No footer icon configured (FOOTER_ICON is empty)`.trim());
   }
 
   // Log information about the new attachment-based system
-  console.log(`${LOG_PREFIX} 📎 Using minimal baby blue attachments with profile pictures`);
-  console.log(`${LOG_PREFIX} 🖼️ Profile pictures will be downloaded from source and uploaded to target`);
-  console.log(`${LOG_PREFIX} 💾 Profile pictures are cached to avoid re-uploading`);
-  console.log(`${LOG_PREFIX} 📁 File attachments will be forwarded from source to target`);
-  console.log(`${LOG_PREFIX} 👤 Author names show: Nickname - @username (if nickname set)`);
-  console.log(`${LOG_PREFIX} 🎨 Format: [Profile Picture] AuthorName | Message | Footer: ServerName • #channel • Time`);
+  console.log(`${LOG_PREFIX} ${emoji('📎')}Using minimal baby blue attachments with profile pictures`.trim());
+  console.log(`${LOG_PREFIX} ${emoji('🖼️')}Profile pictures will be downloaded from source and uploaded to target`.trim());
+  console.log(`${LOG_PREFIX} ${emoji('💾')}Profile pictures are cached to avoid re-uploading`.trim());
+  console.log(`${LOG_PREFIX} ${emoji('📁')}File attachments will be forwarded from source to target`.trim());
+  console.log(`${LOG_PREFIX} ${emoji('👤')}Author names show: Nickname - @username (if nickname set)`.trim());
+  console.log(`${LOG_PREFIX} ${emoji('🎨')}Format: [Profile Picture] AuthorName | Message | Footer: ServerName • #channel • Time`.trim());
 
   return {
     left: {
@@ -120,7 +122,8 @@ export function loadConfig(): Config {
       level: logLevel,
       debugWebSocketEvents: debugWebSocketEvents,
       eventSummaryIntervalMinutes: eventSummaryIntervalMinutes,
-      updateDmChannelHeader: updateDmChannelHeader
+      updateDmChannelHeader: updateDmChannelHeader,
+      disableEmoji: disableEmoji
     },
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,

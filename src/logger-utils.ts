@@ -26,3 +26,18 @@ export const PADDED_PREFIXES = {
   MATTERMOST_CLIENT: createLogPrefix(LOG_PREFIXES.MATTERMOST_CLIENT),
   HEARTBEAT_SERVICE: createLogPrefix(LOG_PREFIXES.HEARTBEAT_SERVICE)
 } as const;
+
+// Store config reference
+let configInstance: { logging: { disableEmoji: boolean } } | null = null;
+
+// Initialize config reference
+export function initializeEmojiConfig(config: { logging: { disableEmoji: boolean } }) {
+  configInstance = config;
+}
+
+// Helper function to conditionally include emojis
+export function emoji(emojiChar: string, fallback: string = ''): string {
+  // Check config first, then fall back to env var for early logging
+  const disableEmoji = configInstance?.logging.disableEmoji ?? process.env.DISABLE_EMOJI === 'true';
+  return disableEmoji ? fallback : emojiChar;
+}

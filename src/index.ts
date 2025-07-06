@@ -1,18 +1,22 @@
 import { loadConfig } from './config';
 import { MattermostBridge } from './bridge';
+import { emoji, initializeEmojiConfig } from './logger-utils';
 
 const LOG_PREFIX = '[main             ]';
 
 export async function main() {
   try {
-    console.log(`${LOG_PREFIX} 🔧 Loading configuration...`);
+    console.log(`${LOG_PREFIX} ${emoji('🔧')}Loading configuration...`.trim());
     const config = loadConfig();
+    
+    // Initialize emoji config
+    initializeEmojiConfig(config);
     
     // Show prominent dry-run message if enabled
     if (config.dryRun) {
       console.log('');
       console.log('╔════════════════════════════════════════════════════════════╗');
-      console.log('║                    🏃‍♂️ DRY RUN MODE 🏃‍♂️                     ║');
+      console.log(`║                    ${emoji('🏃‍♂️')}DRY RUN MODE ${emoji('🏃‍♂️')}                     ║`.trim());
       console.log('║                                                            ║');
       console.log('║   Messages will be displayed but NOT posted to target     ║');
       console.log('║   This is for testing only - no messages will be sent     ║');

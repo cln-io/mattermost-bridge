@@ -22,6 +22,7 @@ export interface LoggingConfig {
   debugWebSocketEvents: boolean;
   eventSummaryIntervalMinutes: number; // New field for event summary interval
   updateDmChannelHeader: boolean; // New field for DM channel header updates
+  disableEmoji: boolean; // Disable emojis in console output
 }
 
 export interface Config {
