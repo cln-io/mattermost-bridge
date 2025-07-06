@@ -280,7 +280,7 @@ export class MattermostClient {
 
   async updateChannelHeader(channelId: string, header: string): Promise<void> {
     try {
-      await this.api.patch(`/channels/${channelId}`, {
+      await this.api.patch(`/channels/${channelId}/patch`, {
         header: header
       });
     } catch (error: any) {
