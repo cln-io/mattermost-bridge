@@ -73,6 +73,13 @@ describe('MattermostBridge', () => {
     bridge = new MattermostBridge(config);
   });
 
+  afterEach(async () => {
+    // Clean up any running timers
+    if (bridge) {
+      await bridge.stop();
+    }
+  });
+
   describe('start', () => {
     const sourceChannelInfo: ChannelInfo = {
       id: 'source123',

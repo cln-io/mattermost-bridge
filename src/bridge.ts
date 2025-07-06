@@ -271,6 +271,9 @@ export class MattermostBridge {
     this.eventSummaryTimer = setInterval(async () => {
       await this.logEventSummary();
     }, intervalMs);
+    
+    // Unref the timer so it doesn't prevent the process from exiting
+    this.eventSummaryTimer.unref();
   }
 
   private async stopEventSummaryTimer(): Promise<void> {
