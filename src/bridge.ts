@@ -18,7 +18,7 @@ export class MattermostBridge {
   private profilePictureCache: Map<string, string> = new Map();
 
   constructor(private config: Config) {
-    this.leftClient = new MattermostClient(config.left, config.logging, false);
+    this.leftClient = new MattermostClient(config.left, config.logging, false, this.bridgeEventSummary.bind(this));
     this.rightClient = new MattermostClient(config.right, config.logging, true);
     this.heartbeatService = new HeartbeatService(config.heartbeat);
   }
@@ -237,6 +237,16 @@ export class MattermostBridge {
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ❌ Error bridging message:`, error);
+    }
+  }
+
+  async bridgeEventSummary(summaryText: string, sourceName: string): Promise<void> {
+    try {
+      // Forward the event summary from left to right client's monitoring channel
+      await this.rightClient.postEventSummaryToMonitoring(summaryText, sourceName);
+      console.log(`${this.LOG_PREFIX} 📊 Event summary bridged from ${sourceName} to ${this.config.right.name}`);
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ❌ Error bridging event summary:`, error);
     }
   }
 

@@ -19,7 +19,7 @@ export class MattermostClient {
   private nextEventSummaryTime: Date | null = null;
   private eventSummaryCount: number = 0;
 
-  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false) {
+  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventSummaryBridge?: (summaryText: string, sourceName: string) => Promise<void>) {
     // Normalize server URL to prevent double slashes
     const normalizedServer = this.normalizeServerUrl(config.server);
     
@@ -116,8 +116,17 @@ export class MattermostClient {
       console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
     }
     
-    // Update status message in status channel if we have one
-    if (this.statusChannelId) {
+    // Bridge event summary to right side if this is the source (left) client
+    if (!this.isDestination && this.eventSummaryBridge) {
+      try {
+        await this.eventSummaryBridge(summaryText, this.config.name);
+      } catch (error) {
+        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to bridge event summary:`, error);
+      }
+    }
+    
+    // Update status message in status channel if we have one (for destination only)
+    if (this.statusChannelId && this.isDestination) {
       try {
         await this.postOrUpdateStatusMessage(this.statusChannelId, summaryText);
       } catch (error) {
@@ -434,6 +443,25 @@ export class MattermostClient {
       }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting or updating status message:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async postEventSummaryToMonitoring(summaryText: string, sourceName: string): Promise<void> {
+    try {
+      if (!this.statusChannelId) {
+        console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] No status channel available for event summary from ${sourceName}`);
+        return;
+      }
+      
+      const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
+      const fullMessage = `📊 **[${sourceName}] Event Summary [${timestamp}]**: ${summaryText}`;
+      
+      // Post the event summary to the monitoring channel
+      await this.postMessage(this.statusChannelId, fullMessage);
+      console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Posted event summary from ${sourceName} to monitoring channel`);
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error posting event summary to monitoring channel:`, error.response?.data || error.message);
       throw error;
     }
   }
