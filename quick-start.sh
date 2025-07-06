@@ -53,30 +53,34 @@ echo ""
 # Step 5: Test
 echo -e "${YELLOW}5️⃣ Running tests...${NC}"
 
-# First check if test file exists
-if [ ! -f "src/test.ts" ]; then
-    echo -e "${RED}❌ src/test.ts file missing!${NC}"
-    echo -e "${YELLOW}Available TypeScript files:${NC}"
-    find src/ -name "*.ts" 2>/dev/null || echo "No .ts files found in src/"
-    echo ""
-    echo -e "${BLUE}Please ensure you have downloaded the src/test.ts file${NC}"
-    exit 1
+# Check if tests directory exists
+if [ ! -d "tests" ]; then
+    echo -e "${RED}❌ tests/ directory missing!${NC}"
+    echo -e "${YELLOW}Creating tests directory...${NC}"
+    mkdir -p tests
 fi
 
-if npm test; then
-    echo -e "${GREEN}✅ All tests passed${NC}"
-    echo ""
-    
-    # Step 6: Run
-    echo -e "${YELLOW}6️⃣ Starting application...${NC}"
-    npm start
+# Check if any test files exist
+if ! ls tests/*.test.ts >/dev/null 2>&1; then
+    echo -e "${YELLOW}⚠️  No test files found in tests/ directory${NC}"
+    echo -e "${BLUE}Skipping tests (no test files to run)${NC}"
 else
-    echo -e "${RED}❌ Tests failed${NC}"
-    echo -e "${YELLOW}Check your .env file and credentials${NC}"
-    echo ""
-    echo -e "${BLUE}Debug steps:${NC}"
-    echo -e "1. Run debug: ${YELLOW}chmod +x debug-build.sh && ./debug-build.sh${NC}"
-    echo -e "2. Check .env file: ${YELLOW}cat .env${NC}"
-    echo -e "3. Run in dev mode: ${YELLOW}npm run dev${NC}"
-    exit 1
+    if npm test; then
+        echo -e "${GREEN}✅ All tests passed${NC}"
+    else
+        echo -e "${RED}❌ Tests failed${NC}"
+        echo -e "${YELLOW}Check your .env file and credentials${NC}"
+        echo ""
+        echo -e "${BLUE}Debug steps:${NC}"
+        echo -e "1. Run debug: ${YELLOW}chmod +x debug-build.sh && ./debug-build.sh${NC}"
+        echo -e "2. Check .env file: ${YELLOW}cat .env${NC}"
+        echo -e "3. Run in dev mode: ${YELLOW}npm run dev${NC}"
+        exit 1
+    fi
 fi
+
+echo ""
+
+# Step 6: Run
+echo -e "${YELLOW}6️⃣ Starting application...${NC}"
+npm start
