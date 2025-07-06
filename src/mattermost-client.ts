@@ -339,13 +339,13 @@ export class MattermostClient {
       const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
       const fullMessage = `🤖 **mattermost-bridge-status [${timestamp}]**: ${statusText}`;
       
-      // Try to find existing status message
-      const existingPost = await this.findStatusMessage(channelId);
+      // Try to find our oldest message (any message by us) - same logic as bridge summaries
+      const existingPost = await this.findBridgeSummaryMessage(channelId);
       
       if (existingPost) {
-        // Update existing message
+        // Update our existing message (could be "beep", "boop", or previous status)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated status message: "${statusText}"`);
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated our oldest message with status: "${statusText}"`);
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
@@ -362,13 +362,13 @@ export class MattermostClient {
       const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
       const fullMessage = `📊 **Bridge Activity Summary [${timestamp}]**: ${summaryText}`;
       
-      // Try to find our most recent message (any message by us)
+      // Try to find our oldest message (any message by us)
       const existingPost = await this.findBridgeSummaryMessage(channelId);
       
       if (existingPost) {
         // Update our existing message (could be "beep", "boop", or previous summary)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated our message with bridge summary: "${summaryText}"`);
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated our oldest message with bridge summary: "${summaryText}"`);
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
@@ -384,18 +384,23 @@ export class MattermostClient {
     try {
       const posts = await this.getChannelPosts(channelId);
       
-      // Look for the most recent post by the current user (ourselves)
+      // Look for the oldest post by the current user (ourselves)
       // We'll update ANY message we posted, not just specific content
-      for (const postId of posts.order) {
+      // posts.order is from newest to oldest, so we need to iterate backwards
+      // Skip system messages (they cannot be edited)
+      for (let i = posts.order.length - 1; i >= 0; i--) {
+        const postId = posts.order[i];
         const post = posts.posts[postId];
-        if (post.user_id === this.userId) {
-          return post; // Return the first (most recent) post by ourselves
+        
+        // Only consider posts by ourselves that are NOT system messages
+        if (post.user_id === this.userId && post.type === '') {
+          return post; // Return the oldest regular post by ourselves
         }
       }
       
       return null;
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} Error finding our most recent message:`, error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} Error finding our oldest message:`, error.response?.data || error.message);
       return null;
     }
   }
