@@ -386,7 +386,7 @@ export class MattermostClient {
     }
   }
 
-  connectWebSocket(channelId: string, onMessage: (msg: MattermostMessage) => void, channelName?: string): void {
+  connectWebSocket(channelId: string, onMessage: (msg: MattermostMessage) => Promise<void>, channelName?: string): void {
     // Use normalized server URL for WebSocket connection
     const normalizedServer = this.normalizeServerUrl(this.config.server);
     const wsUrl = normalizedServer.replace('http', 'ws') + '/api/v4/websocket';
@@ -467,7 +467,7 @@ export class MattermostClient {
             `Received message from #${channelName || channelId} (${message.id})`
           );
 
-          onMessage(message);
+          await onMessage(message);
 
         } else if (eventType === 'hello') {
           console.log(

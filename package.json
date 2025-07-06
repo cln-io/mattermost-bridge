@@ -9,7 +9,10 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "watch": "tsc --watch",
-    "encode-password": "node scripts/encode-password.js"
+    "encode-password": "node scripts/encode-password.js",
+    "test": "jest --config jest-config.js",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -20,8 +23,11 @@
   },
   "devDependencies": {
     "@types/form-data": "2.5.2",
+    "@types/jest": "29.5.14",
     "@types/node": "^20.8.0",
     "@types/ws": "^8.5.0",
+    "jest": "29.7.0",
+    "ts-jest": "29.4.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.2.0"
   }

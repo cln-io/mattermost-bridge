@@ -1,0 +1,531 @@
+import { MattermostClient } from '../src/mattermost-client';
+import { MattermostConfig, LoggingConfig } from '../src/types';
+import axios from 'axios';
+import WebSocket from 'ws';
+import { authenticator } from 'otplib';
+import FormData from 'form-data';
+
+jest.mock('axios');
+jest.mock('ws');
+jest.mock('otplib');
+
+describe('MattermostClient', () => {
+  let client: MattermostClient;
+  let config: MattermostConfig;
+  let loggingConfig: LoggingConfig;
+  let mockAxiosInstance: any;
+  let mockWs: jest.Mocked<WebSocket>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    config = {
+      name: 'TestServer',
+      server: 'https://test.mattermost.com',
+      username: 'testuser',
+      password: 'testpass',
+      team: 'testteam'
+    };
+
+    loggingConfig = {
+      level: 'info',
+      debugWebSocketEvents: false,
+      eventSummaryIntervalMinutes: 10
+    };
+
+    mockAxiosInstance = {
+      get: jest.fn(),
+      post: jest.fn(),
+      defaults: { headers: { common: {} } }
+    };
+
+    (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
+    
+    mockWs = {
+      on: jest.fn(),
+      send: jest.fn(),
+      close: jest.fn(),
+      readyState: WebSocket.OPEN
+    } as any;
+
+    (WebSocket as jest.MockedClass<typeof WebSocket>).mockImplementation(() => mockWs);
+
+    client = new MattermostClient(config, loggingConfig);
+  });
+
+  describe('constructor', () => {
+    it('should normalize server URL', () => {
+      config.server = 'https://test.mattermost.com/';
+      client = new MattermostClient(config, loggingConfig);
+
+      expect(axios.create).toHaveBeenCalledWith({
+        baseURL: 'https://test.mattermost.com/api/v4',
+        timeout: 10000
+      });
+    });
+
+    it('should throw error for invalid server URL', () => {
+      config.server = 'invalid-url';
+
+      expect(() => new MattermostClient(config, loggingConfig)).toThrow('Invalid server URL format');
+    });
+  });
+
+  describe('ping', () => {
+    it('should successfully ping server', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ status: 200 });
+
+      await client.ping();
+
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/system/ping');
+    });
+
+    it('should handle ping failure', async () => {
+      mockAxiosInstance.get.mockRejectedValue(new Error('Network error'));
+
+      await expect(client.ping()).rejects.toThrow('Cannot reach TestServer');
+    });
+  });
+
+  describe('login', () => {
+    it('should login without MFA', async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+
+      await client.login();
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/users/login', {
+        login_id: 'testuser',
+        password: 'testpass'
+      });
+      expect(mockAxiosInstance.defaults.headers.common['Authorization']).toBe('Bearer auth-token');
+    });
+
+    it('should login with MFA', async () => {
+      config.mfaSeed = 'JBSWY3DPEHPK3PXP';
+      client = new MattermostClient(config, loggingConfig);
+      
+      (authenticator.generate as jest.Mock).mockReturnValue('123456');
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+
+      await client.login();
+
+      expect(authenticator.generate).toHaveBeenCalledWith('JBSWY3DPEHPK3PXP');
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/users/login', {
+        login_id: 'testuser',
+        password: 'testpass',
+        token: '123456'
+      });
+    });
+
+    it('should handle MFA generation failure', async () => {
+      config.mfaSeed = 'INVALID_SEED';
+      client = new MattermostClient(config, loggingConfig);
+      
+      (authenticator.generate as jest.Mock).mockImplementation(() => {
+        throw new Error('Invalid seed');
+      });
+
+      await expect(client.login()).rejects.toThrow('Failed to generate TOTP code');
+    });
+
+    it('should handle login failure', async () => {
+      mockAxiosInstance.post.mockRejectedValue({
+        response: { status: 401, data: { message: 'Invalid credentials' } }
+      });
+
+      await expect(client.login()).rejects.toThrow();
+    });
+  });
+
+  describe('channel operations', () => {
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+      await client.login();
+    });
+
+    it('should get channel by ID', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: {
+          id: 'channel123',
+          name: 'test-channel',
+          display_name: 'Test Channel',
+          type: 'O'
+        }
+      });
+
+      const channel = await client.getChannelById('channel123');
+
+      expect(channel).toEqual({
+        id: 'channel123',
+        name: 'test-channel',
+        displayName: 'Test Channel',
+        type: 'O'
+      });
+    });
+
+    it('should return null for non-existent channel', async () => {
+      mockAxiosInstance.get.mockRejectedValue({
+        response: { status: 404 }
+      });
+
+      const channel = await client.getChannelById('nonexistent');
+
+      expect(channel).toBeNull();
+    });
+
+    it('should get channel by name', async () => {
+      mockAxiosInstance.get
+        .mockResolvedValueOnce({ data: [{ id: 'team123' }] })
+        .mockResolvedValueOnce({
+          data: {
+            id: 'channel123',
+            name: 'test-channel',
+            display_name: 'Test Channel'
+          }
+        });
+
+      const channel = await client.getChannelByName('test-channel');
+
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/users/me/teams');
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/teams/team123/channels/name/test-channel');
+      expect(channel).toBeDefined();
+    });
+  });
+
+  describe('message operations', () => {
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+      await client.login();
+    });
+
+    it('should post a simple message', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { id: 'post123' } });
+
+      await client.postMessage('channel123', 'Test message');
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/posts', {
+        channel_id: 'channel123',
+        message: 'Test message'
+      });
+    });
+
+    it('should post message with attachment', async () => {
+      const attachment = {
+        color: '#87CEEB',
+        author_name: 'Test User',
+        text: 'Test message'
+      };
+
+      mockAxiosInstance.post.mockResolvedValue({ data: { id: 'post123' } });
+
+      await client.postMessageWithAttachment('channel123', '', attachment, ['file1', 'file2']);
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/posts', {
+        channel_id: 'channel123',
+        message: '',
+        props: { attachments: [attachment] },
+        file_ids: ['file1', 'file2']
+      });
+    });
+  });
+
+  describe('user operations', () => {
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+      await client.login();
+    });
+
+    it('should get user details', async () => {
+      const userData = {
+        id: 'user123',
+        username: 'testuser',
+        email: 'test@example.com',
+        nickname: 'Test User'
+      };
+      mockAxiosInstance.get.mockResolvedValue({ data: userData });
+
+      const user = await client.getUser('user123');
+
+      expect(user).toEqual(userData);
+    });
+
+    it('should generate user profile picture URL', () => {
+      const url = client.getUserProfilePictureUrl('user123');
+
+      expect(url).toBe('https://test.mattermost.com/api/v4/users/user123/image');
+    });
+
+    it('should download profile picture', async () => {
+      const imageBuffer = Buffer.from('fake-image-data');
+      mockAxiosInstance.get.mockResolvedValue({ data: imageBuffer });
+
+      const result = await client.downloadProfilePicture('user123');
+
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/users/user123/image', {
+        responseType: 'arraybuffer'
+      });
+      expect(result).toEqual(imageBuffer);
+    });
+
+    it('should handle profile picture download failure', async () => {
+      mockAxiosInstance.get.mockRejectedValue(new Error('Not found'));
+
+      const result = await client.downloadProfilePicture('user123');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('file operations', () => {
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+      await client.login();
+    });
+
+    it('should upload file', async () => {
+      const fileBuffer = Buffer.from('file-content');
+      const mockForm = {
+        append: jest.fn(),
+        getHeaders: jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' })
+      };
+      const MockedFormData = FormData as jest.MockedClass<typeof FormData>;
+      MockedFormData.prototype.append = jest.fn();
+      MockedFormData.prototype.getHeaders = jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' });
+
+      mockAxiosInstance.post.mockResolvedValue({
+        data: { file_infos: [{ id: 'file123' }] }
+      });
+
+      const fileId = await client.uploadFile(fileBuffer, 'test.txt', 'channel123');
+
+      expect(mockForm.append).toHaveBeenCalledWith('files', fileBuffer, 'test.txt');
+      expect(mockForm.append).toHaveBeenCalledWith('channel_id', 'channel123');
+      expect(fileId).toBe('file123');
+    });
+
+    it('should download file', async () => {
+      mockAxiosInstance.get
+        .mockResolvedValueOnce({ data: { name: 'test.txt' } })
+        .mockResolvedValueOnce({ data: Buffer.from('file-content') });
+
+      const result = await client.downloadFile('file123');
+
+      expect(result).toEqual({
+        buffer: Buffer.from('file-content'),
+        filename: 'test.txt'
+      });
+    });
+
+    it('should upload multiple files', async () => {
+      const files = [
+        { buffer: Buffer.from('file1'), filename: 'file1.txt' },
+        { buffer: Buffer.from('file2'), filename: 'file2.txt' }
+      ];
+
+      mockAxiosInstance.post.mockResolvedValue({
+        data: { file_infos: [{ id: 'file123' }] }
+      });
+
+      const fileIds = await client.uploadMultipleFiles(files, 'channel123');
+
+      expect(fileIds).toEqual(['file123', 'file123']);
+    });
+  });
+
+  describe('WebSocket operations', () => {
+    let onMessage: jest.Mock;
+    let wsOpenHandler: () => void;
+    let wsMessageHandler: (data: any) => void;
+    let wsErrorHandler: (error: Error) => void;
+    let wsCloseHandler: () => void;
+
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        headers: { token: 'auth-token' },
+        data: { id: 'user123', username: 'testuser' }
+      });
+      await client.login();
+
+      onMessage = jest.fn();
+      
+      mockWs.on.mockImplementation((event, handler) => {
+        if (event === 'open') wsOpenHandler = handler;
+        if (event === 'message') wsMessageHandler = handler;
+        if (event === 'error') wsErrorHandler = handler;
+        if (event === 'close') wsCloseHandler = handler;
+        return mockWs;
+      });
+
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should connect WebSocket and authenticate', () => {
+      client.connectWebSocket('channel123', onMessage, 'test-channel');
+
+      expect(WebSocket).toHaveBeenCalledWith('wss://test.mattermost.com/api/v4/websocket');
+
+      // Trigger open event
+      wsOpenHandler();
+
+      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({
+        seq: 1,
+        action: 'authentication_challenge',
+        data: { token: 'auth-token' }
+      }));
+    });
+
+    it('should handle posted messages for monitored channel', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: { id: 'user123', username: 'testuser', nickname: 'Test User' }
+      });
+
+      client.connectWebSocket('channel123', onMessage);
+      wsOpenHandler();
+
+      const postEvent = {
+        event: 'posted',
+        data: {
+          post: JSON.stringify({
+            id: 'post123',
+            channel_id: 'channel123',
+            user_id: 'user123',
+            message: 'Test message',
+            create_at: Date.now()
+          })
+        }
+      };
+
+      await wsMessageHandler(JSON.stringify(postEvent));
+
+      expect(onMessage).toHaveBeenCalledWith({
+        id: 'post123',
+        channel_id: 'channel123',
+        user_id: 'user123',
+        message: 'Test message',
+        username: 'testuser',
+        nickname: 'Test User',
+        create_at: expect.any(Number),
+        file_ids: []
+      });
+    });
+
+    it('should ignore messages from other channels', async () => {
+      client.connectWebSocket('channel123', onMessage);
+      wsOpenHandler();
+
+      const postEvent = {
+        event: 'posted',
+        data: {
+          post: JSON.stringify({
+            id: 'post123',
+            channel_id: 'other-channel',
+            user_id: 'user123',
+            message: 'Test message'
+          })
+        }
+      };
+
+      await wsMessageHandler(JSON.stringify(postEvent));
+
+      expect(onMessage).not.toHaveBeenCalled();
+    });
+
+    it('should handle WebSocket errors', () => {
+      const consoleSpy = jest.spyOn(console, 'error');
+      client.connectWebSocket('channel123', onMessage);
+
+      const error = new Error('WebSocket error');
+      wsErrorHandler(error);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('WebSocket error'),
+        error
+      );
+    });
+
+    it('should reconnect on close', () => {
+      const consoleSpy = jest.spyOn(console, 'log');
+      client.connectWebSocket('channel123', onMessage, 'test-channel');
+
+      wsCloseHandler();
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('connection closed'));
+
+      // Fast forward 5 seconds
+      jest.advanceTimersByTime(5000);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Attempting to reconnect'));
+      expect(WebSocket).toHaveBeenCalledTimes(2);
+    });
+
+    it('should track and log event summaries', () => {
+      const consoleSpy = jest.spyOn(console, 'log');
+      client.connectWebSocket('channel123', onMessage);
+      wsOpenHandler();
+
+      // Send various events
+      wsMessageHandler(JSON.stringify({ event: 'posted', data: {} }));
+      wsMessageHandler(JSON.stringify({ event: 'typing', data: {} }));
+      wsMessageHandler(JSON.stringify({ event: 'typing', data: {} }));
+      wsMessageHandler(JSON.stringify({ event: 'status_change', data: {} }));
+
+      // Fast forward to trigger event summary
+      jest.advanceTimersByTime(10 * 60 * 1000);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Summary #1')
+      );
+    });
+
+    it('should handle debug mode for WebSocket events', () => {
+      loggingConfig.debugWebSocketEvents = true;
+      client = new MattermostClient(config, loggingConfig);
+      
+      const consoleSpy = jest.spyOn(console, 'log');
+      
+      client.connectWebSocket('channel123', onMessage);
+      wsOpenHandler();
+
+      wsMessageHandler(JSON.stringify({
+        event: 'status_change',
+        data: { user_id: 'user123', status: 'online' }
+      }));
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Raw WebSocket event'),
+        expect.any(String)
+      );
+    });
+  });
+
+  describe('disconnect', () => {
+    it('should close WebSocket connection', () => {
+      client.connectWebSocket('channel123', jest.fn());
+      client.disconnect();
+
+      expect(mockWs.close).toHaveBeenCalled();
+    });
+  });
+});
