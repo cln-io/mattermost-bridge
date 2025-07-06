@@ -1,0 +1,33 @@
+name: WIPE history
+on:
+  workflow_dispatch:
+  
+env:
+  TEMP_FOLDER: $GITHUB_WORKSPACE
+  WORK_FOLDER: $GITHUB_WORKSPACE
+  REPO_FOLDER: ''
+  GIT_USERNAME: 'github-actions[bot]'
+  GIT_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
+  FIRE_WEB_ARCHIVE: 'yes'
+  
+jobs:
+  wipe-history:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+      - name: 🔎 Check out repository code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}  # Use PAT instead of default GITHUB_TOKEN
+      - name: 📇 Wipe git
+        run: |
+          git config --local user.name "$GIT_USERNAME"
+          git config --local user.email "$GIT_EMAIL"
+          git checkout --orphan latest_branch
+          git add -A
+          git commit -am "cleanup"
+          git branch -D main
+          git branch -m main
+          git push -f origin main

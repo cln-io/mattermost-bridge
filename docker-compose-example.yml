@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mattermost-bridge:
+    image: clnio/mattermost-bridge:latest
+    environment:
+      # Left Mattermost Instance
+      MATTERMOST_LEFT_NAME: DEMO-LEFT
+      MATTERMOST_LEFT_TEAM: demo-team-left
+      MATTERMOST_LEFT_SERVER: https://left.mattermost.example.com
+      MATTERMOST_LEFT_USERNAME: demo.left@example.com
+      MATTERMOST_LEFT_PASSWORD_B64: REPLACED_BASE64_PASSWORD_LEFT
+      MATTERMOST_LEFT_MFA_SEED: DEMOMFALEFT1234567890
+
+      # Right Mattermost Instance
+      MATTERMOST_RIGHT_NAME: DEMO-RIGHT
+      MATTERMOST_RIGHT_TEAM: demo-team-right
+      MATTERMOST_RIGHT_SERVER: https://right.mattermost.example.com
+      MATTERMOST_RIGHT_USERNAME: demo.right@example.com
+      MATTERMOST_RIGHT_PASSWORD_B64: REPLACED_BASE64_PASSWORD_RIGHT
+      MATTERMOST_RIGHT_MFA_SEED: DEMOMFARIGHT1234567890
+
+      # Heartbeat Monitoring (Optional)
+      HEARTBEAT_URL: 
+      HEARTBEAT_INTERVAL_MINUTES: 15
+
+      # Event summary interval in minutes (default: 10)
+      EVENT_SUMMARY_INTERVAL_MINUTES: 10
+
+
+      # Logging Configuration (Optional)
+      LOG_LEVEL: info
+      DEBUG_WEBSOCKET_EVENTS: false
+
+      # Bridge Rules
+      SOURCE_CHANNEL_ID: demo_source_channel_id
+      TARGET_CHANNEL_ID: demo_target_channel_id
+
+      #Don't forward messages from users with these email domains
+      DONT_FORWARD_FOR: "@gmail.com,@yahoo.com,@hotmail.com"
+
+      # Optional: Custom footer icon URL
+      FOOTER_ICON: https://mattermost.com/wp-content/uploads/2022/02/icon_WS.png
