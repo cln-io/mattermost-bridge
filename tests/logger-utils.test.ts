@@ -1,4 +1,4 @@
-import { LOG_PREFIXES, PADDED_PREFIXES, createLogPrefix } from '../src/logger-utils';
+import { LOG_PREFIXES, PADDED_PREFIXES, createLogPrefix, emoji, initializeEmojiConfig } from '../src/logger-utils';
 
 describe('logger-utils', () => {
   describe('LOG_PREFIXES', () => {
@@ -43,6 +43,49 @@ describe('logger-utils', () => {
       expect(PADDED_PREFIXES.MESSAGE_TEMPLATE).toBe('[message-template ]');
       expect(PADDED_PREFIXES.MATTERMOST_CLIENT).toBe('[mattermost-client]');
       expect(PADDED_PREFIXES.HEARTBEAT_SERVICE).toBe('[heartbeat-service]');
+    });
+  });
+
+  describe('emoji', () => {
+    beforeEach(() => {
+      // Reset config before each test
+      initializeEmojiConfig(null as any);
+      delete process.env.DISABLE_EMOJI;
+    });
+
+    it('should return emoji when not disabled', () => {
+      expect(emoji('🔧')).toBe('🔧');
+      expect(emoji('🔧', '[TOOL]')).toBe('🔧');
+    });
+
+    it('should return fallback when disabled via env var', () => {
+      process.env.DISABLE_EMOJI = 'true';
+      expect(emoji('🔧')).toBe('');
+      expect(emoji('🔧', '[TOOL]')).toBe('[TOOL]');
+    });
+
+    it('should return emoji when env var is not "true"', () => {
+      process.env.DISABLE_EMOJI = 'false';
+      expect(emoji('🔧')).toBe('🔧');
+      
+      process.env.DISABLE_EMOJI = '1';
+      expect(emoji('🔧')).toBe('🔧');
+    });
+
+    it('should use config when initialized', () => {
+      const config = { logging: { disableEmoji: true } };
+      initializeEmojiConfig(config);
+      
+      expect(emoji('🔧')).toBe('');
+      expect(emoji('🔧', '[TOOL]')).toBe('[TOOL]');
+    });
+
+    it('should prefer config over env var', () => {
+      process.env.DISABLE_EMOJI = 'false';
+      const config = { logging: { disableEmoji: true } };
+      initializeEmojiConfig(config);
+      
+      expect(emoji('🔧')).toBe('');
     });
   });
 });

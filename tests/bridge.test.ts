@@ -45,7 +45,8 @@ describe('MattermostBridge', () => {
         level: 'info',
         debugWebSocketEvents: false,
         eventSummaryIntervalMinutes: 10,
-        updateDmChannelHeader: false
+        updateDmChannelHeader: false,
+        disableEmoji: false
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],

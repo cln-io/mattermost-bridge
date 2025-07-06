@@ -37,12 +37,14 @@ describe('MattermostClient', () => {
       level: 'info',
       debugWebSocketEvents: false,
       eventSummaryIntervalMinutes: 10,
-      updateDmChannelHeader: false
+      updateDmChannelHeader: false,
+      disableEmoji: false
     };
 
     mockAxiosInstance = {
       get: jest.fn(),
       post: jest.fn(),
+      patch: jest.fn(),
       defaults: { headers: { common: {} } }
     };
 
@@ -205,6 +207,24 @@ describe('MattermostClient', () => {
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/users/me/teams');
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/teams/team123/channels/name/test-channel');
       expect(channel).toBeDefined();
+    });
+
+    it('should update channel header', async () => {
+      mockAxiosInstance.patch.mockResolvedValue({ data: {} });
+
+      await client.updateChannelHeader('channel123', 'New header text');
+
+      expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/channels/channel123', {
+        header: 'New header text'
+      });
+    });
+
+    it('should handle channel header update failure', async () => {
+      const error = new Error('Update failed') as any;
+      error.response = { data: { message: 'Permission denied' } };
+      mockAxiosInstance.patch.mockRejectedValue(error);
+
+      await expect(client.updateChannelHeader('channel123', 'New header')).rejects.toThrow('Update failed');
     });
   });
 

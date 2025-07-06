@@ -123,6 +123,7 @@ describe('loadConfig', () => {
     expect(config.logging.debugWebSocketEvents).toBe(true);
     expect(config.logging.eventSummaryIntervalMinutes).toBe(5);
     expect(config.logging.updateDmChannelHeader).toBe(true);
+    expect(config.logging.disableEmoji).toBe(false);
     expect(config.dryRun).toBe(true);
     expect(config.dontForwardFor).toEqual(['@example.com', '@test.com', '@spaces.com']);
     expect(config.footerIcon).toBe('https://icon.example.com/footer.png');
@@ -144,6 +145,7 @@ describe('loadConfig', () => {
     expect(config.logging.debugWebSocketEvents).toBe(false);
     expect(config.logging.eventSummaryIntervalMinutes).toBe(10);
     expect(config.logging.updateDmChannelHeader).toBe(false);
+    expect(config.logging.disableEmoji).toBe(false);
     expect(config.dryRun).toBe(false);
     expect(config.dontForwardFor).toEqual([]);
     expect(config.footerIcon).toBeUndefined();
@@ -159,5 +161,17 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.footerIcon).toBeUndefined();
+  });
+
+  it('should parse DISABLE_EMOJI environment variable', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.DISABLE_EMOJI = 'true';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.logging.disableEmoji).toBe(true);
   });
 });
