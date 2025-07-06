@@ -8,6 +8,12 @@ import FormData from 'form-data';
 jest.mock('axios');
 jest.mock('ws');
 jest.mock('otplib');
+jest.mock('form-data', () => {
+  return jest.fn().mockImplementation(() => ({
+    append: jest.fn(),
+    getHeaders: jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' })
+  }));
+});
 
 describe('MattermostClient', () => {
   let client: MattermostClient;
@@ -135,11 +141,11 @@ describe('MattermostClient', () => {
     });
 
     it('should handle login failure', async () => {
-      mockAxiosInstance.post.mockRejectedValue({
-        response: { status: 401, data: { message: 'Invalid credentials' } }
-      });
+      const error = new Error('Login failed') as any;
+      error.response = { status: 401, data: { message: 'Invalid credentials' } };
+      mockAxiosInstance.post.mockRejectedValue(error);
 
-      await expect(client.login()).rejects.toThrow();
+      await expect(client.login()).rejects.toThrow('Login failed');
     });
   });
 
@@ -302,22 +308,23 @@ describe('MattermostClient', () => {
 
     it('should upload file', async () => {
       const fileBuffer = Buffer.from('file-content');
-      const mockForm = {
-        append: jest.fn(),
-        getHeaders: jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' })
-      };
-      const MockedFormData = FormData as jest.MockedClass<typeof FormData>;
-      MockedFormData.prototype.append = jest.fn();
-      MockedFormData.prototype.getHeaders = jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' });
-
+      const mockAppend = jest.fn();
+      const mockGetHeaders = jest.fn().mockReturnValue({ 'content-type': 'multipart/form-data' });
+      
+      (FormData as jest.MockedClass<typeof FormData>).mockImplementation(() => ({
+        append: mockAppend,
+        getHeaders: mockGetHeaders
+      } as any));
+      
       mockAxiosInstance.post.mockResolvedValue({
         data: { file_infos: [{ id: 'file123' }] }
       });
 
       const fileId = await client.uploadFile(fileBuffer, 'test.txt', 'channel123');
 
-      expect(mockForm.append).toHaveBeenCalledWith('files', fileBuffer, 'test.txt');
-      expect(mockForm.append).toHaveBeenCalledWith('channel_id', 'channel123');
+      expect(FormData).toHaveBeenCalled();
+      expect(mockAppend).toHaveBeenCalledWith('files', fileBuffer, 'test.txt');
+      expect(mockAppend).toHaveBeenCalledWith('channel_id', 'channel123');
       expect(fileId).toBe('file123');
     });
 

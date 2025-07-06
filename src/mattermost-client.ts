@@ -57,7 +57,7 @@ export class MattermostClient {
       return token;
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to generate TOTP:`, error);
-      return null;
+      throw new Error('Failed to generate TOTP code');
     }
   }
 

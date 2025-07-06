@@ -3,7 +3,7 @@ import { MattermostBridge } from './bridge';
 
 const LOG_PREFIX = '[main             ]';
 
-async function main() {
+export async function main() {
   try {
     console.log(`${LOG_PREFIX} 🔧 Loading configuration...`);
     const config = loadConfig();
@@ -64,4 +64,6 @@ async function main() {
 }
 
 // Run the application
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+}

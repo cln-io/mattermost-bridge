@@ -1,5 +1,6 @@
 import { loadConfig } from '../src/config';
 import { MattermostBridge } from '../src/bridge';
+import { main } from '../src/index';
 
 jest.mock('../src/config');
 jest.mock('../src/bridge');
@@ -12,7 +13,6 @@ describe('index', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.resetModules(); // Reset module cache to ensure fresh import
     
     mockBridge = {
       start: jest.fn(),
@@ -22,9 +22,32 @@ describe('index', () => {
     (MattermostBridge as jest.MockedClass<typeof MattermostBridge>).mockImplementation(() => mockBridge);
     
     (loadConfig as jest.Mock).mockReturnValue({
-      left: { name: 'Left' },
-      right: { name: 'Right' },
-      dryRun: false
+      left: { 
+        name: 'Left',
+        server: 'https://left.example.com',
+        username: 'user1',
+        password: 'pass1'
+      },
+      right: { 
+        name: 'Right',
+        server: 'https://right.example.com',
+        username: 'user2',
+        password: 'pass2'
+      },
+      rule: {
+        sourceChannelId: 'source123',
+        targetChannelId: 'target456'
+      },
+      heartbeat: {
+        intervalMinutes: 5
+      },
+      logging: {
+        level: 'info',
+        debugWebSocketEvents: false,
+        eventSummaryIntervalMinutes: 10
+      },
+      dryRun: false,
+      dontForwardFor: []
     });
 
     processExitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -39,11 +62,7 @@ describe('index', () => {
   it('should start bridge successfully', async () => {
     mockBridge.start.mockResolvedValue();
 
-    // Import will run the main function
-    await import('../src/index');
-    
-    // Wait for the main function to complete
-    await new Promise(resolve => setImmediate(resolve));
+    await main();
 
     expect(loadConfig).toHaveBeenCalled();
     expect(MattermostBridge).toHaveBeenCalled();
@@ -52,48 +71,77 @@ describe('index', () => {
 
   it('should display dry run banner when enabled', async () => {
     (loadConfig as jest.Mock).mockReturnValue({
-      left: { name: 'Left' },
-      right: { name: 'Right' },
-      dryRun: true
+      left: { 
+        name: 'Left',
+        server: 'https://left.example.com',
+        username: 'user1',
+        password: 'pass1'
+      },
+      right: { 
+        name: 'Right',
+        server: 'https://right.example.com',
+        username: 'user2',
+        password: 'pass2'
+      },
+      rule: {
+        sourceChannelId: 'source123',
+        targetChannelId: 'target456'
+      },
+      heartbeat: {
+        intervalMinutes: 5
+      },
+      logging: {
+        level: 'info',
+        debugWebSocketEvents: false,
+        eventSummaryIntervalMinutes: 10
+      },
+      dryRun: true,
+      dontForwardFor: []
     });
 
-    await import('../src/index');
-    
-    // Wait for the main function to complete
-    await new Promise(resolve => setImmediate(resolve));
+    await main();
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('DRY RUN MODE'));
   });
 
   it('should handle SIGINT gracefully', async () => {
-    await import('../src/index');
+    // Start main without awaiting to set up signal handlers
+    const mainPromise = main();
     
-    // Wait for the main function to complete and set up event handlers
-    await new Promise(resolve => setImmediate(resolve));
+    // Wait for the signal handlers to be set up
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     process.emit('SIGINT');
 
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(0);
+    
+    // Clean up
+    await mainPromise.catch(() => {});
   });
 
   it('should handle SIGTERM gracefully', async () => {
-    await import('../src/index');
+    // Start main without awaiting to set up signal handlers
+    const mainPromise = main();
     
-    // Wait for the main function to complete and set up event handlers
-    await new Promise(resolve => setImmediate(resolve));
+    // Wait for the signal handlers to be set up
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     process.emit('SIGTERM');
 
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(0);
+    
+    // Clean up
+    await mainPromise.catch(() => {});
   });
 
   it('should handle uncaught exceptions', async () => {
-    await import('../src/index');
+    // Start main without awaiting to set up signal handlers
+    const mainPromise = main();
     
-    // Wait for the main function to complete and set up event handlers
-    await new Promise(resolve => setImmediate(resolve));
+    // Wait for the signal handlers to be set up
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     const error = new Error('Uncaught error');
     process.emit('uncaughtException', error);
@@ -101,16 +149,21 @@ describe('index', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Uncaught Exception'), error);
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);
+    
+    // Clean up
+    await mainPromise.catch(() => {});
   });
 
   it('should handle unhandled rejections', async () => {
-    await import('../src/index');
+    // Start main without awaiting to set up signal handlers
+    const mainPromise = main();
     
-    // Wait for the main function to complete and set up event handlers
-    await new Promise(resolve => setImmediate(resolve));
+    // Wait for the signal handlers to be set up
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     const reason = new Error('Unhandled rejection');
     const promise = Promise.reject(reason);
+    promise.catch(() => {}); // Prevent actual unhandled rejection
     process.emit('unhandledRejection', reason, promise);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -121,16 +174,16 @@ describe('index', () => {
     );
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);
+    
+    // Clean up
+    await mainPromise.catch(() => {});
   });
 
   it('should handle startup errors', async () => {
     const error = new Error('Startup failed');
     mockBridge.start.mockRejectedValue(error);
 
-    await import('../src/index');
-    
-    // Wait for async operations
-    await new Promise(resolve => setImmediate(resolve));
+    await main();
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Application failed to start'), error);
     expect(processExitSpy).toHaveBeenCalledWith(1);
