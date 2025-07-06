@@ -2,6 +2,10 @@
 
 A TypeScript-based bridge that forwards messages between channels on different Mattermost instances. Uses regular user accounts for authentication - no bot setup required!
 
+## Flow
+
+![Mattermost Bridge Flow](img/bridge-svg-diagram.svg)
+
 ## Screenshots
 
 The left mattermost (the one we want to monitor messages on) has a user posting a message:
@@ -15,6 +19,16 @@ The bridge will mirror the message to the right mattermost (the destination matt
 The console / app log
 
 ![console](img/console-light.png)
+
+## How It Works
+
+![Mattermost Bridge Flow](img/bridge-flow.svg)
+
+The bridge listens for messages on a source channel and forwards them to a target channel on a different Mattermost instance, preserving:
+- User avatars
+- File attachments
+- Message formatting
+- Original context (timestamp, channel, server)
 
 ## Features
 
