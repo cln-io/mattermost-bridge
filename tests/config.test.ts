@@ -106,6 +106,7 @@ describe('loadConfig', () => {
     process.env.LOG_LEVEL = 'debug';
     process.env.DEBUG_WEBSOCKET_EVENTS = 'true';
     process.env.EVENT_SUMMARY_INTERVAL_MINUTES = '5';
+    process.env.UPDATE_DM_CHANNEL_HEADER = 'true';
     process.env.DRY_RUN = 'true';
     process.env.DONT_FORWARD_FOR = '@example.com,@test.com, @spaces.com ';
     process.env.FOOTER_ICON = 'https://icon.example.com/footer.png';
@@ -121,6 +122,7 @@ describe('loadConfig', () => {
     expect(config.logging.level).toBe('debug');
     expect(config.logging.debugWebSocketEvents).toBe(true);
     expect(config.logging.eventSummaryIntervalMinutes).toBe(5);
+    expect(config.logging.updateDmChannelHeader).toBe(true);
     expect(config.dryRun).toBe(true);
     expect(config.dontForwardFor).toEqual(['@example.com', '@test.com', '@spaces.com']);
     expect(config.footerIcon).toBe('https://icon.example.com/footer.png');
@@ -141,6 +143,7 @@ describe('loadConfig', () => {
     expect(config.logging.level).toBe('info');
     expect(config.logging.debugWebSocketEvents).toBe(false);
     expect(config.logging.eventSummaryIntervalMinutes).toBe(10);
+    expect(config.logging.updateDmChannelHeader).toBe(false);
     expect(config.dryRun).toBe(false);
     expect(config.dontForwardFor).toEqual([]);
     expect(config.footerIcon).toBeUndefined();

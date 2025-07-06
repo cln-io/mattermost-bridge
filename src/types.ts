@@ -21,6 +21,7 @@ export interface LoggingConfig {
   level: 'debug' | 'info' | 'warn' | 'error';
   debugWebSocketEvents: boolean;
   eventSummaryIntervalMinutes: number; // New field for event summary interval
+  updateDmChannelHeader: boolean; // New field for DM channel header updates
 }
 
 export interface Config {
@@ -65,6 +66,8 @@ export interface User {
   username: string;
   email: string;
   nickname?: string;
+  is_bot?: boolean;
+  bot_description?: string;
 }
 
 // Message attachment interface for minimal formatting

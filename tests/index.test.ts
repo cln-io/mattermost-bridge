@@ -16,7 +16,7 @@ describe('index', () => {
     
     mockBridge = {
       start: jest.fn(),
-      stop: jest.fn()
+      stop: jest.fn().mockResolvedValue(undefined)
     } as any;
 
     (MattermostBridge as jest.MockedClass<typeof MattermostBridge>).mockImplementation(() => mockBridge);
@@ -44,7 +44,8 @@ describe('index', () => {
       logging: {
         level: 'info',
         debugWebSocketEvents: false,
-        eventSummaryIntervalMinutes: 10
+        eventSummaryIntervalMinutes: 10,
+        updateDmChannelHeader: false
       },
       dryRun: false,
       dontForwardFor: []
@@ -57,6 +58,12 @@ describe('index', () => {
 
   afterEach(() => {
     processExitSpy.mockRestore();
+    // Remove all listeners to prevent interference between tests
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    process.removeAllListeners('SIGQUIT');
+    process.removeAllListeners('uncaughtException');
+    process.removeAllListeners('unhandledRejection');
   });
 
   it('should start bridge successfully', async () => {
@@ -93,7 +100,8 @@ describe('index', () => {
       logging: {
         level: 'info',
         debugWebSocketEvents: false,
-        eventSummaryIntervalMinutes: 10
+        eventSummaryIntervalMinutes: 10,
+        updateDmChannelHeader: false
       },
       dryRun: true,
       dontForwardFor: []
@@ -105,13 +113,18 @@ describe('index', () => {
   });
 
   it('should handle SIGINT gracefully', async () => {
-    // Start main without awaiting to set up signal handlers
-    const mainPromise = main();
+    // Mock bridge.start to resolve immediately so main() can set up handlers
+    mockBridge.start.mockResolvedValue();
     
-    // Wait for the signal handlers to be set up
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Start main and wait for setup
+    const mainPromise = main();
+    await new Promise(resolve => setTimeout(resolve, 100));
 
+    // Now emit the signal
     process.emit('SIGINT');
+
+    // Wait a bit for the async handler
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(0);
@@ -121,13 +134,18 @@ describe('index', () => {
   });
 
   it('should handle SIGTERM gracefully', async () => {
-    // Start main without awaiting to set up signal handlers
-    const mainPromise = main();
+    // Mock bridge.start to resolve immediately so main() can set up handlers
+    mockBridge.start.mockResolvedValue();
     
-    // Wait for the signal handlers to be set up
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Start main and wait for setup
+    const mainPromise = main();
+    await new Promise(resolve => setTimeout(resolve, 100));
 
+    // Now emit the signal
     process.emit('SIGTERM');
+
+    // Wait a bit for the async handler
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(0);
@@ -137,14 +155,18 @@ describe('index', () => {
   });
 
   it('should handle uncaught exceptions', async () => {
-    // Start main without awaiting to set up signal handlers
-    const mainPromise = main();
+    // Mock bridge.start to resolve immediately so main() can set up handlers
+    mockBridge.start.mockResolvedValue();
     
-    // Wait for the signal handlers to be set up
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Start main and wait for setup
+    const mainPromise = main();
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const error = new Error('Uncaught error');
     process.emit('uncaughtException', error);
+
+    // Wait a bit for the async handler
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Uncaught Exception'), error);
     expect(mockBridge.stop).toHaveBeenCalled();
@@ -155,16 +177,20 @@ describe('index', () => {
   });
 
   it('should handle unhandled rejections', async () => {
-    // Start main without awaiting to set up signal handlers
-    const mainPromise = main();
+    // Mock bridge.start to resolve immediately so main() can set up handlers
+    mockBridge.start.mockResolvedValue();
     
-    // Wait for the signal handlers to be set up
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Start main and wait for setup
+    const mainPromise = main();
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const reason = new Error('Unhandled rejection');
     const promise = Promise.reject(reason);
     promise.catch(() => {}); // Prevent actual unhandled rejection
     process.emit('unhandledRejection', reason, promise);
+
+    // Wait a bit for the async handler
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Unhandled Rejection'),

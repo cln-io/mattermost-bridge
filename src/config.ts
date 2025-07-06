@@ -55,6 +55,10 @@ export function loadConfig(): Config {
   const logLevel = (process.env.LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
   const debugWebSocketEvents = process.env.DEBUG_WEBSOCKET_EVENTS === 'true';
   const eventSummaryIntervalMinutes = parseInt(process.env.EVENT_SUMMARY_INTERVAL_MINUTES || '10', 10);
+  const updateDmChannelHeader = process.env.UPDATE_DM_CHANNEL_HEADER === 'true';
+  if (updateDmChannelHeader) {
+    console.log(`${LOG_PREFIX} 📬 DM channel header updates enabled - status will appear in your private message channel`);
+  }
 
   // Parse dry-run mode
   const dryRun = process.env.DRY_RUN === 'true';
@@ -115,7 +119,8 @@ export function loadConfig(): Config {
     logging: {
       level: logLevel,
       debugWebSocketEvents: debugWebSocketEvents,
-      eventSummaryIntervalMinutes: eventSummaryIntervalMinutes
+      eventSummaryIntervalMinutes: eventSummaryIntervalMinutes,
+      updateDmChannelHeader: updateDmChannelHeader
     },
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,

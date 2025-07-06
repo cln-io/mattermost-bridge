@@ -232,11 +232,11 @@ export class MattermostBridge {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     console.log(`${this.LOG_PREFIX} 🛑 Stopping bridge...`);
     this.heartbeatService.stop();
-    this.leftClient.disconnect();
-    this.rightClient.disconnect();
+    await this.leftClient.disconnect();
+    await this.rightClient.disconnect();
     
     // Clear profile picture cache
     this.profilePictureCache.clear();

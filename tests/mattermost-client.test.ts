@@ -36,7 +36,8 @@ describe('MattermostClient', () => {
     loggingConfig = {
       level: 'info',
       debugWebSocketEvents: false,
-      eventSummaryIntervalMinutes: 10
+      eventSummaryIntervalMinutes: 10,
+      updateDmChannelHeader: false
     };
 
     mockAxiosInstance = {
@@ -472,15 +473,16 @@ describe('MattermostClient', () => {
       );
     });
 
-    it('should reconnect on close', () => {
+    it('should reconnect on close', async () => {
       const consoleSpy = jest.spyOn(console, 'log');
       client.connectWebSocket('channel123', onMessage, 'test-channel');
 
-      wsCloseHandler();
+      // Trigger the close handler
+      await wsCloseHandler();
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('connection closed'));
 
-      // Fast forward 5 seconds
+      // Fast forward 5 seconds to trigger reconnection
       jest.advanceTimersByTime(5000);
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Attempting to reconnect'));
@@ -528,9 +530,9 @@ describe('MattermostClient', () => {
   });
 
   describe('disconnect', () => {
-    it('should close WebSocket connection', () => {
+    it('should close WebSocket connection', async () => {
       client.connectWebSocket('channel123', jest.fn());
-      client.disconnect();
+      await client.disconnect();
 
       expect(mockWs.close).toHaveBeenCalled();
     });

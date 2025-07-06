@@ -44,7 +44,8 @@ describe('MattermostBridge', () => {
       logging: {
         level: 'info',
         debugWebSocketEvents: false,
-        eventSummaryIntervalMinutes: 10
+        eventSummaryIntervalMinutes: 10,
+        updateDmChannelHeader: false
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],
@@ -377,10 +378,10 @@ describe('MattermostBridge', () => {
   });
 
   describe('stop', () => {
-    it('should stop all services and clear cache', () => {
+    it('should stop all services and clear cache', async () => {
       const consoleSpy = jest.spyOn(console, 'log');
 
-      bridge.stop();
+      await bridge.stop();
 
       expect(mockHeartbeatService.stop).toHaveBeenCalled();
       expect(mockLeftClient.disconnect).toHaveBeenCalled();

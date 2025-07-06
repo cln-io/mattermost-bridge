@@ -9,6 +9,7 @@ export class MattermostClient {
   private token: string = '';
   private ws: WebSocket | null = null;
   private userId: string = '';
+  private dmChannelId: string = '';
   private readonly LOG_PREFIX = '[mattermost-client]';
   
   // Event tracking for summary
@@ -77,21 +78,21 @@ export class MattermostClient {
     console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] Next summary at: ${this.nextEventSummaryTime.toTimeString().split(' ')[0]}`);
 
     // Log event summary at the configured interval
-    this.eventSummaryTimer = setInterval(() => {
-      this.logEventSummary();
+    this.eventSummaryTimer = setInterval(async () => {
+      await this.logEventSummary();
     }, intervalMs);
   }
 
-  private stopEventSummaryTimer(): void {
+  private async stopEventSummaryTimer(): Promise<void> {
     if (this.eventSummaryTimer) {
       clearInterval(this.eventSummaryTimer);
       this.eventSummaryTimer = null;
       // Log final summary before stopping
-      this.logEventSummary();
+      await this.logEventSummary();
     }
   }
 
-  private logEventSummary(): void {
+  private async logEventSummary(): Promise<void> {
     const now = new Date();
     const duration = Math.round((now.getTime() - this.lastEventSummaryTime.getTime()) / 1000);
     this.eventSummaryCount++;
@@ -101,15 +102,29 @@ export class MattermostClient {
     this.nextEventSummaryTime = new Date(now.getTime() + intervalMs);
     const nextTimeStr = this.nextEventSummaryTime.toTimeString().split(' ')[0]; // HH:MM:SS format
     
+    let summaryText: string;
     if (this.eventCounts.size === 0) {
-      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`);
+      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`;
+      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
     } else {
       const summary = Array.from(this.eventCounts.entries())
         .sort((a, b) => b[1] - a[1]) // Sort by count descending
         .map(([event, count]) => `${event}: ${count}`)
         .join(', ');
       
-      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] Summary #${this.eventSummaryCount} (${duration}s): ${summary} - next at ${nextTimeStr}`);
+      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): ${summary} - next at ${nextTimeStr}`;
+      console.log(`${this.LOG_PREFIX} 📊 [${this.config.name}] ${summaryText}`);
+    }
+    
+    // Update DM channel header with status if we have a DM channel
+    if (this.dmChannelId) {
+      try {
+        const timestamp = now.toLocaleString();
+        const headerText = `MMSync Status [${timestamp}]: ${summaryText}`;
+        await this.updateChannelHeader(this.dmChannelId, headerText);
+      } catch (error) {
+        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to update DM channel header:`, error);
+      }
     }
     
     // Reset counters
@@ -177,6 +192,37 @@ export class MattermostClient {
       this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
       
       console.log(`${this.LOG_PREFIX} ✅ Successfully logged in to ${this.config.name} as ${response.data.username}`);
+      
+      // Set up DM channel for status updates if enabled and user is not a bot
+      if (this.loggingConfig.updateDmChannelHeader) {
+        if (response.data.is_bot) {
+          console.log(`${this.LOG_PREFIX} 🤖 [${this.config.name}] Bot account detected - DM channel header updates disabled`);
+        } else {
+          try {
+            const dmChannel = await this.getDirectMessageChannel(this.userId);
+            if (dmChannel) {
+              this.dmChannelId = dmChannel.id;
+              console.log(`${this.LOG_PREFIX} 📬 [${this.config.name}] DM channel header updates enabled: ${this.dmChannelId}`);
+              
+              // Set initial "all good" status immediately
+              try {
+                const timestamp = new Date().toLocaleString();
+                const headerText = `MMSync Status [${timestamp}]: ✅ All good - awaiting status updates`;
+                await this.updateChannelHeader(this.dmChannelId, headerText);
+                console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Initial DM channel header set: "All good - awaiting status updates"`);
+              } catch (error) {
+                console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set initial DM channel header:`, error);
+              }
+            } else {
+              console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Could not find DM channel - header updates disabled`);
+            }
+          } catch (error) {
+            console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set up DM channel for header updates:`, error);
+          }
+        }
+      } else {
+        console.log(`${this.LOG_PREFIX} ℹ️ [${this.config.name}] DM channel header updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`);
+      }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} ❌ Login failed for ${this.config.name}:`, error.response?.data || error.message);
       if (this.config.mfaSeed && error.response?.status === 401) {
@@ -229,6 +275,38 @@ export class MattermostClient {
       }
       console.error(`${this.LOG_PREFIX} Error getting channel ${channelName}:`, error.response?.data || error.message);
       throw error;
+    }
+  }
+
+  async updateChannelHeader(channelId: string, header: string): Promise<void> {
+    try {
+      await this.api.patch(`/channels/${channelId}`, {
+        header: header
+      });
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error updating channel header:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getCurrentUser(): Promise<User> {
+    try {
+      const response = await this.api.get('/users/me');
+      return response.data;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error getting current user:`, error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getDirectMessageChannel(userId: string): Promise<Channel | null> {
+    try {
+      // Get direct message channel with the specified user
+      const response = await this.api.post('/channels/direct', [this.userId, userId]);
+      return response.data;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error getting direct message channel:`, error.response?.data || error.message);
+      return null;
     }
   }
 
@@ -538,14 +616,14 @@ export class MattermostClient {
       });
     });
 
-    this.ws.on('close', () => {
+    this.ws.on('close', async () => {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket connection closed`);
       
       // Log final event summary before reconnecting
-      this.logEventSummary();
+      await this.logEventSummary();
       
       // Stop the timer
-      this.stopEventSummaryTimer();
+      await this.stopEventSummaryTimer();
       
       // Reconnect after 5 seconds
       setTimeout(() => {
@@ -555,17 +633,17 @@ export class MattermostClient {
     });
   }
 
-  disconnect(): void {
+  async disconnect(): Promise<void> {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     // Stop event summary timer
-    this.stopEventSummaryTimer();
+    await this.stopEventSummaryTimer();
   }
 
   // Debug method to manually trigger event summary
-  forceEventSummary(): void {
-    this.logEventSummary();
+  async forceEventSummary(): Promise<void> {
+    await this.logEventSummary();
   }
 }
