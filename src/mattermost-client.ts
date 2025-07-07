@@ -723,4 +723,19 @@ export class MattermostClient {
     return this.statusChannelId;
   }
 
+  async addReaction(messageId: string, emojiName: string): Promise<void> {
+    try {
+      await this.api.post('/reactions', {
+        post_id: messageId,
+        emoji_name: emojiName,
+        user_id: this.userId
+      });
+      
+      console.log(`${this.LOG_PREFIX} ${emoji('👍')}[${this.config.name}] Added reaction :${emojiName}: to message ${messageId}`.trim());
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to add reaction :${emojiName}: to message ${messageId}:`.trim(), error.response?.data || error.message);
+      // Don't throw error - reactions are not critical to bridge functionality
+    }
+  }
+
 }

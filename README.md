@@ -111,6 +111,7 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | `HEARTBEAT_INTERVAL_MINUTES` | How often to send heartbeat pings | ❌ | `15` | `5` |
 | **Appearance** |
 | `FOOTER_ICON` | Custom icon URL for message footers | ❌ | - | `https://example.com/icon.png` |
+| `LEFT_MESSAGE_EMOJI` | Emoji to add to original message after bridging | ❌ | `envelope_with_arrow` | `white_check_mark`, `arrow_right` |
 
 ### Password Encoding
 

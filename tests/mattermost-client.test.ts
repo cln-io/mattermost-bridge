@@ -540,4 +540,38 @@ describe('MattermostClient', () => {
       expect(mockWs.close).toHaveBeenCalled();
     });
   });
+
+  describe('addReaction', () => {
+    beforeEach(async () => {
+      mockAxiosInstance.post.mockResolvedValue({
+        data: { id: 'user123' },
+        headers: { token: 'test-token' }
+      });
+      await client.login();
+    });
+
+    it('should add emoji reaction to message', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: {} });
+
+      await client.addReaction('post123', 'thumbsup');
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/reactions', {
+        post_id: 'post123',
+        emoji_name: 'thumbsup',
+        user_id: 'user123'
+      });
+    });
+
+    it('should handle reaction API errors gracefully', async () => {
+      mockAxiosInstance.post.mockRejectedValue(new Error('API Error'));
+      const consoleSpy = jest.spyOn(console, 'error');
+
+      await client.addReaction('post123', 'thumbsup');
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to add reaction'),
+        'API Error'
+      );
+    });
+  });
 });

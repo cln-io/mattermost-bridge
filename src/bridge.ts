@@ -243,6 +243,11 @@ export class MattermostBridge {
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
         console.log(`${this.LOG_PREFIX} ${emoji('✅')}Message bridged to #${targetChannelName} on ${this.config.right.name}${fileInfo}`.trim());
         
+        // Add emoji reaction to original message if configured
+        if (this.config.leftMessageEmoji) {
+          await this.leftClient.addReaction(message.id, this.config.leftMessageEmoji);
+        }
+        
         // Track message bridging event on destination client for status updates
         this.trackBridgeEvent('message_bridged');
       }

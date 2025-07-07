@@ -89,6 +89,10 @@ export function loadConfig(): Config {
     console.log(`${LOG_PREFIX} ${emoji('🎨')}No footer icon configured (FOOTER_ICON is empty)`.trim());
   }
 
+  // Parse left message emoji configuration
+  const leftMessageEmoji = process.env.LEFT_MESSAGE_EMOJI?.trim() || 'envelope_with_arrow';
+  console.log(`${LOG_PREFIX} ${emoji('📮')}Left message emoji: :${leftMessageEmoji}: (reacts to original messages after bridging)`.trim());
+
   // Log information about the new attachment-based system
   console.log(`${LOG_PREFIX} ${emoji('📎')}Using minimal baby blue attachments with profile pictures`.trim());
   console.log(`${LOG_PREFIX} ${emoji('🖼️')}Profile pictures will be downloaded from source and uploaded to target`.trim());
@@ -132,6 +136,7 @@ export function loadConfig(): Config {
     },
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,
-    footerIcon: footerIcon || undefined
+    footerIcon: footerIcon || undefined,
+    leftMessageEmoji: leftMessageEmoji
   };
 }

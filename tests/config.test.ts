@@ -152,6 +152,7 @@ describe('loadConfig', () => {
     expect(config.dryRun).toBe(false);
     expect(config.dontForwardFor).toEqual([]);
     expect(config.footerIcon).toBeUndefined();
+    expect(config.leftMessageEmoji).toBe('envelope_with_arrow');
   });
 
   it('should handle empty FOOTER_ICON environment variable', () => {
@@ -189,5 +190,17 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.logging.timezone).toBe('Europe/Brussels');
+  });
+
+  it('should parse LEFT_MESSAGE_EMOJI environment variable', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.LEFT_MESSAGE_EMOJI = 'white_check_mark';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.leftMessageEmoji).toBe('white_check_mark');
   });
 });

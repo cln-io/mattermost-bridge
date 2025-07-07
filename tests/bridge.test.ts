@@ -51,7 +51,8 @@ describe('MattermostBridge', () => {
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],
-      footerIcon: 'https://icon.example.com/footer.png'
+      footerIcon: 'https://icon.example.com/footer.png',
+      leftMessageEmoji: 'envelope_with_arrow'
     };
 
     mockLeftClient = new MattermostClient(config.left, config.logging) as jest.Mocked<MattermostClient>;
@@ -62,6 +63,8 @@ describe('MattermostBridge', () => {
     mockRightClient.getStatusChannelId = jest.fn();
     mockRightClient.postMessage = jest.fn();
     mockRightClient.postOrUpdateBridgeSummary = jest.fn();
+    mockLeftClient.addReaction = jest.fn();
+    mockRightClient.addReaction = jest.fn();
 
     (MattermostClient as jest.MockedClass<typeof MattermostClient>).mockImplementation((cfg) => {
       if (cfg === config.left) return mockLeftClient;
@@ -376,6 +379,28 @@ describe('MattermostBridge', () => {
         'https://icon.example.com/footer.png',
         config
       );
+    });
+
+    it('should add emoji reaction to original message after bridging', async () => {
+      const handleMessage = (bridge as any).handleMessage.bind(bridge);
+      
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'user123',
+        username: 'testuser',
+        email: 'user@domain.com',
+        nickname: 'Test User'
+      });
+      
+      (createMessageAttachment as jest.Mock).mockReturnValue({
+        color: '#87CEEB',
+        author_name: 'Test User - @testuser',
+        text: 'Test message'
+      });
+
+      await handleMessage(mockMessage);
+
+      expect(mockLeftClient.addReaction).toHaveBeenCalledWith('msg123', 'envelope_with_arrow');
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalled();
     });
 
     it('should handle errors gracefully', async () => {

@@ -35,6 +35,7 @@ export interface Config {
   dryRun: boolean; // New field for dry-run mode
   dontForwardFor: string[]; // List of email domains to exclude
   footerIcon?: string; // Optional footer icon URL
+  leftMessageEmoji?: string; // Emoji to add to original message after bridging
 }
 
 export interface MattermostMessage {

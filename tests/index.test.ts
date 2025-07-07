@@ -50,7 +50,8 @@ describe('index', () => {
         timezone: 'UTC'
       },
       dryRun: false,
-      dontForwardFor: []
+      dontForwardFor: [],
+      leftMessageEmoji: 'envelope_with_arrow'
     });
 
     processExitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -108,7 +109,8 @@ describe('index', () => {
         timezone: 'UTC'
       },
       dryRun: true,
-      dontForwardFor: []
+      dontForwardFor: [],
+      leftMessageEmoji: 'envelope_with_arrow'
     });
 
     await main();
