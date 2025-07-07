@@ -2,9 +2,7 @@
 
 A TypeScript-based bridge that forwards messages between channels on different Mattermost instances. Uses regular user accounts for authentication - no bot setup required!
 
-## Flow
-
-![Mattermost Bridge Flow](img/bridge-svg-diagram.svg)
+> This project was vibe coded by Claude Opus 4
 
 ## Screenshots
 
