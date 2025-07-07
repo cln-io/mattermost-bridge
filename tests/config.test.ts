@@ -152,7 +152,7 @@ describe('loadConfig', () => {
     expect(config.dryRun).toBe(false);
     expect(config.dontForwardFor).toEqual([]);
     expect(config.footerIcon).toBeUndefined();
-    expect(config.leftMessageEmoji).toBe('envelope_with_arrow');
+    expect(config.leftMessageEmoji).toBeUndefined();
   });
 
   it('should handle empty FOOTER_ICON environment variable', () => {

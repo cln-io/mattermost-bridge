@@ -51,8 +51,7 @@ describe('MattermostBridge', () => {
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],
-      footerIcon: 'https://icon.example.com/footer.png',
-      leftMessageEmoji: 'envelope_with_arrow'
+      footerIcon: 'https://icon.example.com/footer.png'
     };
 
     mockLeftClient = new MattermostClient(config.left, config.logging) as jest.Mocked<MattermostClient>;
@@ -381,8 +380,11 @@ describe('MattermostBridge', () => {
       );
     });
 
-    it('should add emoji reaction to original message after bridging', async () => {
-      const handleMessage = (bridge as any).handleMessage.bind(bridge);
+    it('should add emoji reaction to original message after bridging when configured', async () => {
+      // Create a new bridge with emoji enabled
+      const configWithEmoji = { ...config, leftMessageEmoji: 'envelope_with_arrow' };
+      const bridgeWithEmoji = new MattermostBridge(configWithEmoji);
+      const handleMessage = (bridgeWithEmoji as any).handleMessage.bind(bridgeWithEmoji);
       
       mockLeftClient.getUser.mockResolvedValue({
         id: 'user123',
@@ -400,6 +402,28 @@ describe('MattermostBridge', () => {
       await handleMessage(mockMessage);
 
       expect(mockLeftClient.addReaction).toHaveBeenCalledWith('msg123', 'envelope_with_arrow');
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalled();
+    });
+
+    it('should not add emoji reaction when LEFT_MESSAGE_EMOJI is not configured', async () => {
+      const handleMessage = (bridge as any).handleMessage.bind(bridge);
+      
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'user123',
+        username: 'testuser',
+        email: 'user@domain.com',
+        nickname: 'Test User'
+      });
+      
+      (createMessageAttachment as jest.Mock).mockReturnValue({
+        color: '#87CEEB',
+        author_name: 'Test User - @testuser',
+        text: 'Test message'
+      });
+
+      await handleMessage(mockMessage);
+
+      expect(mockLeftClient.addReaction).not.toHaveBeenCalled();
       expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalled();
     });
 

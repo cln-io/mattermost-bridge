@@ -90,8 +90,12 @@ export function loadConfig(): Config {
   }
 
   // Parse left message emoji configuration
-  const leftMessageEmoji = process.env.LEFT_MESSAGE_EMOJI?.trim() || 'envelope_with_arrow';
-  console.log(`${LOG_PREFIX} ${emoji('📮')}Left message emoji: :${leftMessageEmoji}: (reacts to original messages after bridging)`.trim());
+  const leftMessageEmoji = process.env.LEFT_MESSAGE_EMOJI?.trim();
+  if (leftMessageEmoji) {
+    console.log(`${LOG_PREFIX} ${emoji('📮')}Left message emoji: :${leftMessageEmoji}: (reacts to original messages after bridging)`.trim());
+  } else {
+    console.log(`${LOG_PREFIX} ${emoji('📮')}Left message emoji disabled (LEFT_MESSAGE_EMOJI not set)`.trim());
+  }
 
   // Log information about the new attachment-based system
   console.log(`${LOG_PREFIX} ${emoji('📎')}Using minimal baby blue attachments with profile pictures`.trim());
@@ -137,6 +141,6 @@ export function loadConfig(): Config {
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,
     footerIcon: footerIcon || undefined,
-    leftMessageEmoji: leftMessageEmoji
+    leftMessageEmoji: leftMessageEmoji || undefined
   };
 }
