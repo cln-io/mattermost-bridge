@@ -337,7 +337,10 @@ export class MattermostClient {
 
   async postOrUpdateStatusMessage(channelId: string, statusText: string): Promise<void> {
     try {
-      const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
+      const timestamp = new Date().toLocaleString('en-CA', { 
+        hour12: false, 
+        timeZone: this.loggingConfig.timezone 
+      });
       const fullMessage = `${emoji('☑️')}**mattermost-bridge-status [${timestamp}]**: ${statusText}`.trim();
       
       // Try to find our oldest message (any message by us) - same logic as bridge summaries
@@ -360,7 +363,10 @@ export class MattermostClient {
 
   async postOrUpdateBridgeSummary(channelId: string, summaryText: string): Promise<void> {
     try {
-      const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
+      const timestamp = new Date().toLocaleString('en-CA', { 
+        hour12: false, 
+        timeZone: this.loggingConfig.timezone 
+      });
       const fullMessage = `${emoji('📊')}**Bridge Activity Summary [${timestamp}]**: ${summaryText}`.trim();
       
       // Try to find our oldest message (any message by us)
