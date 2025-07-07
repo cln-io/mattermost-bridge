@@ -351,7 +351,7 @@ export class MattermostBridge {
     
     // Use the new postOrUpdateBridgeSummary method to find and update existing message
     await this.rightClient.postOrUpdateBridgeSummary(statusChannelId, summaryText);
-    console.log(`${this.LOG_PREFIX} ${emoji('✅')}Posted/updated bridge summary in monitoring channel`.trim());
+    console.log(`${this.LOG_PREFIX} ${emoji('📊')}Posted/updated bridge summary in monitoring channel`.trim());
   }
 
   async stop(): Promise<void> {

@@ -349,7 +349,7 @@ export class MattermostClient {
       if (existingPost) {
         // Update our existing message (could be "beep", "boop", or previous status)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Updated our oldest message with status: "${statusText}"`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[${this.config.name}] Updated our oldest message with status: "${statusText}"`.trim());
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
@@ -375,7 +375,7 @@ export class MattermostClient {
       if (existingPost) {
         // Update our existing message (could be "beep", "boop", or previous summary)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Updated our oldest message with bridge summary: "${summaryText}"`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[${this.config.name}] Updated our oldest message with bridge summary: "${summaryText}"`.trim());
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
