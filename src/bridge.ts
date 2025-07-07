@@ -2,7 +2,7 @@ import { MattermostClient } from './mattermost-client';
 import { Config, MattermostMessage, ChannelInfo } from './types';
 import { createMessageAttachment } from './message-attachment';
 import { HeartbeatService } from './heartbeat-service';
-import { PADDED_PREFIXES } from './logger-utils';
+import { PADDED_PREFIXES, emoji } from './logger-utils';
 
 export class MattermostBridge {
   private leftClient: MattermostClient;
@@ -31,51 +31,51 @@ export class MattermostBridge {
   }
 
   async start(): Promise<void> {
-    console.log(`${this.LOG_PREFIX} 🚀 Starting Mattermost Bridge...`);
+    console.log(`${this.LOG_PREFIX} ${emoji('🚀')}Starting Mattermost Bridge...`.trim());
     
     try {
       // Step 1: Ping both servers to check connectivity
-      console.log(`${this.LOG_PREFIX} 🏓 Checking server connectivity...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🏓')}Checking server connectivity...`.trim());
       await this.leftClient.ping();
       await this.rightClient.ping();
-      console.log(`${this.LOG_PREFIX} ✅ Both servers are reachable`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}Both servers are reachable`.trim());
       console.log('');
 
       // Step 2: Login to both instances
-      console.log(`${this.LOG_PREFIX} 🔐 Authenticating with both servers...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🔐')}Authenticating with both servers...`.trim());
       await this.leftClient.login();
       await this.rightClient.login();
-      console.log(`${this.LOG_PREFIX} ✅ Successfully authenticated with both servers`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully authenticated with both servers`.trim());
       console.log('');
 
       // Step 3: Resolve channel information
-      console.log(`${this.LOG_PREFIX} 📋 Resolving channel information...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📋')}Resolving channel information...`.trim());
       this.sourceChannelId = this.config.rule.sourceChannelId;
       this.targetChannelId = this.config.rule.targetChannelId;
 
       // Resolve source channel info
-      console.log(`${this.LOG_PREFIX} 🔍 [${this.config.left.name}] Looking up channel: ${this.sourceChannelId}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🔍')}[${this.config.left.name}] Looking up channel: ${this.sourceChannelId}`.trim());
       this.sourceChannelInfo = await this.leftClient.getChannelById(this.sourceChannelId);
       
       if (!this.sourceChannelInfo) {
         throw new Error(`Source channel '${this.sourceChannelId}' not found on ${this.config.left.name}`);
       }
       
-      console.log(`${this.LOG_PREFIX} ✅ [${this.config.left.name}] Found channel: #${this.sourceChannelInfo.name} (${this.sourceChannelInfo.displayName})`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.left.name}] Found channel: #${this.sourceChannelInfo.name} (${this.sourceChannelInfo.displayName})`.trim());
 
       // Resolve target channel info
-      console.log(`${this.LOG_PREFIX} 🔍 [${this.config.right.name}] Looking up channel: ${this.targetChannelId}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🔍')}[${this.config.right.name}] Looking up channel: ${this.targetChannelId}`.trim());
       this.targetChannelInfo = await this.rightClient.getChannelById(this.targetChannelId);
       
       if (!this.targetChannelInfo) {
         throw new Error(`Target channel '${this.targetChannelId}' not found on ${this.config.right.name}`);
       }
       
-      console.log(`${this.LOG_PREFIX} ✅ [${this.config.right.name}] Found channel: #${this.targetChannelInfo.name} (${this.targetChannelInfo.displayName})`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.right.name}] Found channel: #${this.targetChannelInfo.name} (${this.targetChannelInfo.displayName})`.trim());
       console.log('');
 
       // Step 4: Display bridge configuration
-      console.log(`${this.LOG_PREFIX} 📡 Bridge Configuration:`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📡')}Bridge Configuration:`.trim());
       console.log(`${this.LOG_PREFIX}    Source: #${this.sourceChannelInfo.name} (${this.sourceChannelId}) on ${this.config.left.name}`);
       console.log(`${this.LOG_PREFIX}    Target: #${this.targetChannelInfo.name} (${this.targetChannelId}) on ${this.config.right.name}`);
       console.log(`${this.LOG_PREFIX}    Format: Minimal attachments with profile pictures`);
@@ -94,9 +94,9 @@ export class MattermostBridge {
         this.sourceChannelInfo.name
       );
 
-      console.log(`${this.LOG_PREFIX} ✅ Bridge is now active and listening for messages...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}Bridge is now active and listening for messages...`.trim());
       if (this.config.dryRun) {
-        console.log(`${this.LOG_PREFIX} 🏃‍♂️ DRY RUN MODE - Messages will be logged but NOT posted`);
+        console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}DRY RUN MODE - Messages will be logged but NOT posted`.trim());
       }
       console.log('');
 
@@ -107,7 +107,7 @@ export class MattermostBridge {
       this.heartbeatService.start();
       
     } catch (error) {
-      console.error(`${this.LOG_PREFIX} ❌ Failed to start bridge:`, error);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to start bridge:`.trim(), error);
       throw error;
     }
   }
@@ -117,11 +117,11 @@ export class MattermostBridge {
       const sourceChannelName = this.sourceChannelInfo?.name || this.sourceChannelId;
       const targetChannelName = this.targetChannelInfo?.name || this.targetChannelId;
       
-      console.log(`${this.LOG_PREFIX} 📨 [#${sourceChannelName}] ${message.nickname ? `${message.nickname} (@${message.username})` : message.username}: ${message.message}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📨')}[#${sourceChannelName}] ${message.nickname ? `${message.nickname} (@${message.username})` : message.username}: ${message.message}`.trim());
       
       // Check if message has file attachments
       if (message.file_ids && message.file_ids.length > 0) {
-        console.log(`${this.LOG_PREFIX} 📎 Message has ${message.file_ids.length} file attachment(s)`);
+        console.log(`${this.LOG_PREFIX} ${emoji('📎')}Message has ${message.file_ids.length} file attachment(s)`.trim());
       }
       
       // Get user details to check email domain
@@ -138,7 +138,7 @@ export class MattermostBridge {
         });
         
         if (shouldExclude) {
-          console.log(`${this.LOG_PREFIX} 🚫 Message from ${user.username} (${user.email}) excluded due to email domain filter`);
+          console.log(`${this.LOG_PREFIX} ${emoji('🚫')}Message from ${user.username} (${user.email}) excluded due to email domain filter`.trim());
           // Track excluded message for status updates
           this.trackBridgeEvent('message_excluded');
           return; // Skip this message
@@ -152,15 +152,15 @@ export class MattermostBridge {
       // Check cache first
       if (this.profilePictureCache.has(message.user_id)) {
         profilePictureUrl = this.profilePictureCache.get(message.user_id);
-        console.log(`${this.LOG_PREFIX} 🖼️ Using cached profile picture for ${displayName}`);
+        console.log(`${this.LOG_PREFIX} ${emoji('🖼️')}Using cached profile picture for ${displayName}`.trim());
       } else {
         // Download profile picture from source
-        console.log(`${this.LOG_PREFIX} 📥 Downloading profile picture for ${displayName}...`);
+        console.log(`${this.LOG_PREFIX} ${emoji('📥')}Downloading profile picture for ${displayName}...`.trim());
         const imageBuffer = await this.leftClient.downloadProfilePicture(message.user_id);
         
         if (imageBuffer) {
           // Upload to target server
-          console.log(`${this.LOG_PREFIX} 📤 Uploading profile picture for ${displayName}...`);
+          console.log(`${this.LOG_PREFIX} ${emoji('📤')}Uploading profile picture for ${displayName}...`.trim());
           const uploadedUrl = await this.rightClient.uploadProfilePicture(
             imageBuffer, 
             `${message.user_id}_profile.png`, 
@@ -171,38 +171,38 @@ export class MattermostBridge {
             profilePictureUrl = uploadedUrl;
             // Cache the uploaded URL
             this.profilePictureCache.set(message.user_id, uploadedUrl);
-            console.log(`${this.LOG_PREFIX} ✅ Profile picture uploaded and cached for ${displayName}`);
+            console.log(`${this.LOG_PREFIX} ${emoji('✅')}Profile picture uploaded and cached for ${displayName}`.trim());
           } else {
-            console.log(`${this.LOG_PREFIX} ⚠️ Failed to upload profile picture for ${displayName}`);
+            console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}Failed to upload profile picture for ${displayName}`.trim());
           }
         } else {
-          console.log(`${this.LOG_PREFIX} ⚠️ Failed to download profile picture for ${displayName}`);
+          console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}Failed to download profile picture for ${displayName}`.trim());
         }
       }
       
       // Handle file attachments
       let uploadedFileIds: string[] = [];
       if (message.file_ids && message.file_ids.length > 0) {
-        console.log(`${this.LOG_PREFIX} 📎 Processing ${message.file_ids.length} file attachment(s)...`);
+        console.log(`${this.LOG_PREFIX} ${emoji('📎')}Processing ${message.file_ids.length} file attachment(s)...`.trim());
         
         const filesToUpload: { buffer: Buffer; filename: string }[] = [];
         
         for (const fileId of message.file_ids) {
-          console.log(`${this.LOG_PREFIX} 📥 Downloading file: ${fileId}`);
+          console.log(`${this.LOG_PREFIX} ${emoji('📥')}Downloading file: ${fileId}`.trim());
           const fileData = await this.leftClient.downloadFile(fileId);
           
           if (fileData) {
             filesToUpload.push(fileData);
-            console.log(`${this.LOG_PREFIX} ✅ Downloaded file: ${fileData.filename}`);
+            console.log(`${this.LOG_PREFIX} ${emoji('✅')}Downloaded file: ${fileData.filename}`.trim());
           } else {
-            console.log(`${this.LOG_PREFIX} ❌ Failed to download file: ${fileId}`);
+            console.log(`${this.LOG_PREFIX} ${emoji('❌')}Failed to download file: ${fileId}`.trim());
           }
         }
         
         if (filesToUpload.length > 0) {
-          console.log(`${this.LOG_PREFIX} 📤 Uploading ${filesToUpload.length} file(s) to target server...`);
+          console.log(`${this.LOG_PREFIX} ${emoji('📤')}Uploading ${filesToUpload.length} file(s) to target server...`.trim());
           uploadedFileIds = await this.rightClient.uploadMultipleFiles(filesToUpload, this.targetChannelId);
-          console.log(`${this.LOG_PREFIX} ✅ Successfully uploaded ${uploadedFileIds.length} file(s)`);
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully uploaded ${uploadedFileIds.length} file(s)`.trim());
         }
       }
       
@@ -216,17 +216,17 @@ export class MattermostBridge {
       );
       
       if (this.config.dryRun) {
-        console.log(`${this.LOG_PREFIX} 🏃‍♂️ [DRY RUN] Would post to #${targetChannelName} on ${this.config.right.name}:`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Author: ${attachment.author_name}`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Message: ${attachment.text}`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Footer: ${attachment.footer}`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Color: ${attachment.color} (baby blue)`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Profile Picture: ${attachment.author_icon || 'none'}`);
-        console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] Footer Icon: ${attachment.footer_icon || 'none'}`);
+        console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}[DRY RUN] Would post to #${targetChannelName} on ${this.config.right.name}:`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Author: ${attachment.author_name}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Message: ${attachment.text}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Footer: ${attachment.footer}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Color: ${attachment.color} (baby blue)`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Profile Picture: ${attachment.author_icon || 'none'}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] Footer Icon: ${attachment.footer_icon || 'none'}`.trim());
         if (uploadedFileIds.length > 0) {
-          console.log(`${this.LOG_PREFIX} 📝 [DRY RUN] File Attachments: ${uploadedFileIds.length} file(s)`);
+          console.log(`${this.LOG_PREFIX} ${emoji('📝')}[DRY RUN] File Attachments: ${uploadedFileIds.length} file(s)`.trim());
         }
-        console.log(`${this.LOG_PREFIX} 🏃‍♂️ [DRY RUN] Message NOT sent (dry-run mode)`);
+        console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}[DRY RUN] Message NOT sent (dry-run mode)`.trim());
         
         // Track dry run event for status updates
         this.trackBridgeEvent('message_dry_run');
@@ -240,13 +240,13 @@ export class MattermostBridge {
         );
         
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
-        console.log(`${this.LOG_PREFIX} ✅ Message bridged to #${targetChannelName} on ${this.config.right.name}${fileInfo}`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Message bridged to #${targetChannelName} on ${this.config.right.name}${fileInfo}`.trim());
         
         // Track message bridging event on destination client for status updates
         this.trackBridgeEvent('message_bridged');
       }
     } catch (error) {
-      console.error(`${this.LOG_PREFIX} ❌ Error bridging message:`, error);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Error bridging message:`.trim(), error);
     }
   }
 
@@ -266,7 +266,7 @@ export class MattermostBridge {
     const intervalMinutes = this.config.logging.eventSummaryIntervalMinutes;
     const intervalMs = intervalMinutes * 60 * 1000;
 
-    console.log(`${this.LOG_PREFIX} 📊 Starting centralized event summary (every ${intervalMinutes} minutes)`);
+    console.log(`${this.LOG_PREFIX} ${emoji('📊')}Starting centralized event summary (every ${intervalMinutes} minutes)`.trim());
     
     this.eventSummaryTimer = setInterval(async () => {
       await this.logEventSummary();
@@ -300,14 +300,14 @@ export class MattermostBridge {
     let summaryText: string;
     if (this.leftEvents.size === 0 && this.bridgeEvents.size === 0) {
       summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`;
-      console.log(`${this.LOG_PREFIX} 📊 ${summaryText}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📊')}${summaryText}`.trim());
     } else {
       const sections = [];
       if (leftSummary) sections.push(leftSummary);
       if (bridgeSummary) sections.push(bridgeSummary);
       
       summaryText = `Summary #${this.eventSummaryCount} (${duration}s): ${sections.join(', ')} - next at ${nextTimeStr}`;
-      console.log(`${this.LOG_PREFIX} 📊 ${summaryText}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📊')}${summaryText}`.trim());
     }
     
     // Post to monitoring channel on right client
@@ -315,7 +315,7 @@ export class MattermostBridge {
       try {
         await this.postEventSummaryToMonitoring(summaryText);
       } catch (error) {
-        console.error(`${this.LOG_PREFIX} ❌ Failed to post event summary to monitoring:`, error);
+        console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to post event summary to monitoring:`.trim(), error);
       }
     }
     
@@ -339,17 +339,17 @@ export class MattermostBridge {
   private async postEventSummaryToMonitoring(summaryText: string): Promise<void> {
     const statusChannelId = await this.rightClient.getStatusChannelId();
     if (!statusChannelId) {
-      console.log(`${this.LOG_PREFIX} ⚠️ No status channel available for event summary`);
+      console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}No status channel available for event summary`.trim());
       return;
     }
     
     // Use the new postOrUpdateBridgeSummary method to find and update existing message
     await this.rightClient.postOrUpdateBridgeSummary(statusChannelId, summaryText);
-    console.log(`${this.LOG_PREFIX} ✅ Posted/updated bridge summary in monitoring channel`);
+    console.log(`${this.LOG_PREFIX} ${emoji('✅')}Posted/updated bridge summary in monitoring channel`.trim());
   }
 
   async stop(): Promise<void> {
-    console.log(`${this.LOG_PREFIX} 🛑 Stopping bridge...`);
+    console.log(`${this.LOG_PREFIX} ${emoji('🛑')}Stopping bridge...`.trim());
     await this.stopEventSummaryTimer();
     this.heartbeatService.stop();
     await this.leftClient.disconnect();
@@ -357,6 +357,6 @@ export class MattermostBridge {
     
     // Clear profile picture cache
     this.profilePictureCache.clear();
-    console.log(`${this.LOG_PREFIX} 🗑️ Cleared profile picture cache`);
+    console.log(`${this.LOG_PREFIX} ${emoji('🗑️')}Cleared profile picture cache`.trim());
   }
 }

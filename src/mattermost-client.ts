@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import { authenticator } from 'otplib';
 import { MattermostConfig, MattermostMessage, Channel, ChannelInfo, User, LoggingConfig, MessageAttachment } from './types';
 import FormData from 'form-data';
+import { emoji } from './logger-utils';
 
 export class MattermostClient {
   private api: AxiosInstance;
@@ -21,11 +22,11 @@ export class MattermostClient {
       timeout: 10000
     });
     
-    console.log(`${this.LOG_PREFIX} 🔧 [${config.name}] Normalized server URL: ${normalizedServer}`);
+    console.log(`${this.LOG_PREFIX} ${emoji('🔧')}[${config.name}] Normalized server URL: ${normalizedServer}`.trim());
     
     // Only log debugging info if debug mode is enabled
     if (this.loggingConfig.debugWebSocketEvents) {
-      console.log(`${this.LOG_PREFIX} 🔧 [${config.name}] Debug WebSocket events enabled`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🔧')}[${config.name}] Debug WebSocket events enabled`.trim());
     }
   }
 
@@ -50,7 +51,7 @@ export class MattermostClient {
       const token = authenticator.generate(this.config.mfaSeed);
       return token;
     } catch (error) {
-      console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to generate TOTP:`, error);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to generate TOTP:`.trim(), error);
       throw new Error('Failed to generate TOTP code');
     }
   }
@@ -60,19 +61,19 @@ export class MattermostClient {
   async ping(): Promise<void> {
     try {
       const normalizedServer = this.normalizeServerUrl(this.config.server);
-      console.log(`${this.LOG_PREFIX} 🏓 Pinging ${this.config.name} (${normalizedServer})...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('🏓')}Pinging ${this.config.name} (${normalizedServer})...`.trim());
       
       const startTime = Date.now();
       const response = await this.api.get('/system/ping');
       const duration = Date.now() - startTime;
       
       if (response.status === 200) {
-        console.log(`${this.LOG_PREFIX} ✅ ${this.config.name} is reachable (${duration}ms)`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}${this.config.name} is reachable (${duration}ms)`.trim());
       } else {
         throw new Error(`Unexpected status: ${response.status}`);
       }
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} ❌ Failed to ping ${this.config.name}:`, error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to ping ${this.config.name}:`.trim(), error.response?.data || error.message);
       throw new Error(`Cannot reach ${this.config.name} at ${this.config.server}`);
     }
   }
@@ -93,15 +94,15 @@ export class MattermostClient {
         const totpCode = this.generateTOTP();
         if (totpCode) {
           loginPayload.token = totpCode;
-          console.log(`${this.LOG_PREFIX} 🔐 [${this.config.name}] TOTP Code: ${totpCode}`);
-          console.log(`${this.LOG_PREFIX} 🕐 [${this.config.name}] Time remaining: ${30 - (Math.floor(Date.now() / 1000) % 30)}s`);
-          console.log(`${this.LOG_PREFIX} 📤 [${this.config.name}] Including MFA token in login request`);
+          console.log(`${this.LOG_PREFIX} ${emoji('🔐')}[${this.config.name}] TOTP Code: ${totpCode}`.trim());
+          console.log(`${this.LOG_PREFIX} ${emoji('🕐')}[${this.config.name}] Time remaining: ${30 - (Math.floor(Date.now() / 1000) % 30)}s`.trim());
+          console.log(`${this.LOG_PREFIX} ${emoji('📤')}[${this.config.name}] Including MFA token in login request`.trim());
         } else {
-          console.log(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to generate TOTP code`);
+          console.log(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to generate TOTP code`.trim());
           throw new Error(`Failed to generate TOTP code for ${this.config.name}`);
         }
       } else {
-        console.log(`${this.LOG_PREFIX} ℹ️ [${this.config.name}] No MFA seed configured`);
+        console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] No MFA seed configured`.trim());
       }
       
       const response = await this.api.post('/users/login', loginPayload);
@@ -112,39 +113,39 @@ export class MattermostClient {
       // Set auth header for future requests
       this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
       
-      console.log(`${this.LOG_PREFIX} ✅ Successfully logged in to ${this.config.name} as ${response.data.username}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${response.data.username}`.trim());
       
       // Set up status channel for status updates if enabled and user is not a bot (only for destination)
       if (this.loggingConfig.updateDmChannelHeader && this.isDestination) {
         if (response.data.is_bot) {
-          console.log(`${this.LOG_PREFIX} 🤖 [${this.config.name}] Bot account detected - status channel updates disabled`);
+          console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
         } else {
           try {
             const statusChannel = await this.findOrCreateStatusChannel();
             if (statusChannel) {
               this.statusChannelId = statusChannel.id;
-              console.log(`${this.LOG_PREFIX} 📬 [${this.config.name}] Status channel updates enabled: ${this.statusChannelId}`);
+              console.log(`${this.LOG_PREFIX} ${emoji('📬')}[${this.config.name}] Status channel updates enabled: ${this.statusChannelId}`.trim());
               
               // Post or update initial status message
               try {
-                await this.postOrUpdateStatusMessage(this.statusChannelId, '✅ All good - awaiting status updates');
+                await this.postOrUpdateStatusMessage(this.statusChannelId, `${emoji('☑️')}All good - awaiting status updates`.trim());
               } catch (error) {
-                console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to post initial status message:`, error);
+                console.warn(`${this.LOG_PREFIX} ${emoji('⚠️')}[${this.config.name}] Failed to post initial status message:`.trim(), error);
               }
             } else {
-              console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Could not find or create status channel - status updates disabled`);
+              console.warn(`${this.LOG_PREFIX} ${emoji('⚠️')}[${this.config.name}] Could not find or create status channel - status updates disabled`.trim());
             }
           } catch (error) {
-            console.warn(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Failed to set up status channel:`, error);
+            console.warn(`${this.LOG_PREFIX} ${emoji('⚠️')}[${this.config.name}] Failed to set up status channel:`.trim(), error);
           }
         }
       } else {
-        console.log(`${this.LOG_PREFIX} ℹ️ [${this.config.name}] Status channel updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`);
+        console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] Status channel updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`.trim());
       }
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} ❌ Login failed for ${this.config.name}:`, error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Login failed for ${this.config.name}:`.trim(), error.response?.data || error.message);
       if (this.config.mfaSeed && error.response?.status === 401) {
-        console.error(`${this.LOG_PREFIX} 💡 [${this.config.name}] Hint: Check if MFA seed is correct and TOTP code is valid`);
+        console.error(`${this.LOG_PREFIX} ${emoji('💡')}[${this.config.name}] Hint: Check if MFA seed is correct and TOTP code is valid`.trim());
       }
       throw error;
     }
@@ -163,10 +164,10 @@ export class MattermostClient {
       };
     } catch (error: any) {
       if (error.response?.status === 404) {
-        console.warn(`${this.LOG_PREFIX} ❌ [${this.config.name}] Channel ID '${channelId}' not found`);
+        console.warn(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Channel ID '${channelId}' not found`.trim());
         return null;
       }
-      console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Error getting channel ${channelId}:`, error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error getting channel ${channelId}:`.trim(), error.response?.data || error.message);
       throw error;
     }
   }
@@ -261,16 +262,16 @@ export class MattermostClient {
       // First try to find existing channel
       const existingChannel = await this.getChannelByName('mattermost-bridge-status');
       if (existingChannel) {
-        console.log(`${this.LOG_PREFIX} 📋 [${this.config.name}] Found existing status channel: ${existingChannel.id}`);
+        console.log(`${this.LOG_PREFIX} ${emoji('📋')}[${this.config.name}] Found existing status channel: ${existingChannel.id}`.trim());
         return existingChannel;
       }
       
       // Channel doesn't exist, create it
-      console.log(`${this.LOG_PREFIX} 📋 [${this.config.name}] Creating new status channel...`);
+      console.log(`${this.LOG_PREFIX} ${emoji('📋')}[${this.config.name}] Creating new status channel...`.trim());
       const newChannel = await this.createPrivateChannel('mattermost-bridge-status', 'mattermost-bridge-status');
       
       if (newChannel) {
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Created status channel: ${newChannel.id}`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Created status channel: ${newChannel.id}`.trim());
       }
       
       return newChannel;
@@ -337,7 +338,7 @@ export class MattermostClient {
   async postOrUpdateStatusMessage(channelId: string, statusText: string): Promise<void> {
     try {
       const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
-      const fullMessage = `🤖 **mattermost-bridge-status [${timestamp}]**: ${statusText}`;
+      const fullMessage = `${emoji('☑️')}**mattermost-bridge-status [${timestamp}]**: ${statusText}`.trim();
       
       // Try to find our oldest message (any message by us) - same logic as bridge summaries
       const existingPost = await this.findBridgeSummaryMessage(channelId);
@@ -345,11 +346,11 @@ export class MattermostClient {
       if (existingPost) {
         // Update our existing message (could be "beep", "boop", or previous status)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated our oldest message with status: "${statusText}"`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Updated our oldest message with status: "${statusText}"`.trim());
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Posted new status message: "${statusText}"`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Posted new status message: "${statusText}"`.trim());
       }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting or updating status message:`, error.response?.data || error.message);
@@ -360,7 +361,7 @@ export class MattermostClient {
   async postOrUpdateBridgeSummary(channelId: string, summaryText: string): Promise<void> {
     try {
       const timestamp = new Date().toLocaleString('en-CA', { hour12: false });
-      const fullMessage = `📊 **Bridge Activity Summary [${timestamp}]**: ${summaryText}`;
+      const fullMessage = `${emoji('📊')}**Bridge Activity Summary [${timestamp}]**: ${summaryText}`.trim();
       
       // Try to find our oldest message (any message by us)
       const existingPost = await this.findBridgeSummaryMessage(channelId);
@@ -368,11 +369,11 @@ export class MattermostClient {
       if (existingPost) {
         // Update our existing message (could be "beep", "boop", or previous summary)
         await this.updateMessage(existingPost.id, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Updated our oldest message with bridge summary: "${summaryText}"`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Updated our oldest message with bridge summary: "${summaryText}"`.trim());
       } else {
         // Post new message
         await this.postMessage(channelId, fullMessage);
-        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] Posted new bridge summary: "${summaryText}"`);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Posted new bridge summary: "${summaryText}"`.trim());
       }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting or updating bridge summary:`, error.response?.data || error.message);
@@ -450,7 +451,7 @@ export class MattermostClient {
       });
       return Buffer.from(response.data);
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Failed to download profile picture for user ${userId}:`, error.response?.status || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to download profile picture for user ${userId}:`.trim(), error.response?.status || error.message);
       return null;
     }
   }

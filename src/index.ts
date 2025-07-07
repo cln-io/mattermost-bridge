@@ -29,7 +29,7 @@ export async function main() {
     
     // Handle graceful shutdown for Docker
     const gracefulShutdown = async (signal: string) => {
-      console.log(`\n${LOG_PREFIX} 🛑 Received ${signal}, shutting down gracefully...`);
+      console.log(`\n${LOG_PREFIX} ${emoji('🛑')}Received ${signal}, shutting down gracefully...`.trim());
       await bridge.stop();
       process.exit(0);
     };
@@ -41,20 +41,20 @@ export async function main() {
     
     // Handle SIGUSR1 to force event summary (for debugging)
     process.on('SIGUSR1', () => {
-      console.log(`${LOG_PREFIX} 📊 Received SIGUSR1, forcing event summary...`);
+      console.log(`${LOG_PREFIX} ${emoji('📊')}Received SIGUSR1, forcing event summary...`.trim());
       // This would need to be implemented in the bridge class
       // For now, just log that we received the signal
     });
     
     // Handle uncaught exceptions
     process.on('uncaughtException', async (error) => {
-      console.error(`${LOG_PREFIX} 💥 Uncaught Exception:`, error);
+      console.error(`${LOG_PREFIX} ${emoji('💥')}Uncaught Exception:`.trim(), error);
       await bridge.stop();
       process.exit(1);
     });
 
     process.on('unhandledRejection', async (reason, promise) => {
-      console.error(`${LOG_PREFIX} 💥 Unhandled Rejection at:`, promise, 'reason:', reason);
+      console.error(`${LOG_PREFIX} ${emoji('💥')}Unhandled Rejection at:`.trim(), promise, 'reason:', reason);
       await bridge.stop();
       process.exit(1);
     });
@@ -62,7 +62,7 @@ export async function main() {
     await bridge.start();
     
   } catch (error) {
-    console.error(`${LOG_PREFIX} 💥 Application failed to start:`, error);
+    console.error(`${LOG_PREFIX} ${emoji('💥')}Application failed to start:`.trim(), error);
     process.exit(1);
   }
 }
