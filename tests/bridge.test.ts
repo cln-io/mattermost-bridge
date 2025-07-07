@@ -46,7 +46,8 @@ describe('MattermostBridge', () => {
         debugWebSocketEvents: false,
         eventSummaryIntervalMinutes: 10,
         updateDmChannelHeader: false,
-        disableEmoji: false
+        disableEmoji: false,
+        timezone: 'UTC'
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],
@@ -372,7 +373,8 @@ describe('MattermostBridge', () => {
         config.left,
         'source-channel',
         undefined, // No profile picture URL
-        'https://icon.example.com/footer.png'
+        'https://icon.example.com/footer.png',
+        config
       );
     });
 

@@ -5,6 +5,8 @@ import { emoji, initializeEmojiConfig } from './logger-utils';
 const LOG_PREFIX = '[main             ]';
 
 export async function main() {
+  let bridge: MattermostBridge | undefined;
+  
   try {
     console.log(`${LOG_PREFIX} ${emoji('🔧')}Loading configuration...`.trim());
     const config = loadConfig();
@@ -25,12 +27,14 @@ export async function main() {
       process.title = 'mattermost-bridge (DRY-RUN)';
     }
     
-    const bridge = new MattermostBridge(config);
+    bridge = new MattermostBridge(config);
     
     // Handle graceful shutdown for Docker
     const gracefulShutdown = async (signal: string) => {
       console.log(`\n${LOG_PREFIX} ${emoji('🛑')}Received ${signal}, shutting down gracefully...`.trim());
-      await bridge.stop();
+      if (bridge) {
+        await bridge.stop();
+      }
       process.exit(0);
     };
 
@@ -49,13 +53,17 @@ export async function main() {
     // Handle uncaught exceptions
     process.on('uncaughtException', async (error) => {
       console.error(`${LOG_PREFIX} ${emoji('💥')}Uncaught Exception:`.trim(), error);
-      await bridge.stop();
+      if (bridge) {
+        await bridge.stop();
+      }
       process.exit(1);
     });
 
     process.on('unhandledRejection', async (reason, promise) => {
       console.error(`${LOG_PREFIX} ${emoji('💥')}Unhandled Rejection at:`.trim(), promise, 'reason:', reason);
-      await bridge.stop();
+      if (bridge) {
+        await bridge.stop();
+      }
       process.exit(1);
     });
 
@@ -63,6 +71,9 @@ export async function main() {
     
   } catch (error) {
     console.error(`${LOG_PREFIX} ${emoji('💥')}Application failed to start:`.trim(), error);
+    if (bridge) {
+      await bridge.stop();
+    }
     process.exit(1);
   }
 }

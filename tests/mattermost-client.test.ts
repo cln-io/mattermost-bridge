@@ -38,7 +38,8 @@ describe('MattermostClient', () => {
       debugWebSocketEvents: false,
       eventSummaryIntervalMinutes: 10,
       updateDmChannelHeader: false,
-      disableEmoji: false
+      disableEmoji: false,
+      timezone: 'UTC'
     };
 
     mockAxiosInstance = {

@@ -112,6 +112,7 @@ describe('loadConfig', () => {
     process.env.FOOTER_ICON = 'https://icon.example.com/footer.png';
     process.env.MATTERMOST_LEFT_MFA_SEED = 'JBSWY3DPEHPK3PXP';
     process.env.MATTERMOST_RIGHT_MFA_SEED = 'GEZDGNBVGY3TQOJQ';
+    process.env.TIMEZONE = 'Europe/Brussels';
 
     // Import after setting up mocks
     const { loadConfig } = require('../src/config');
@@ -124,6 +125,7 @@ describe('loadConfig', () => {
     expect(config.logging.eventSummaryIntervalMinutes).toBe(5);
     expect(config.logging.updateDmChannelHeader).toBe(true);
     expect(config.logging.disableEmoji).toBe(false);
+    expect(config.logging.timezone).toBe('Europe/Brussels');
     expect(config.dryRun).toBe(true);
     expect(config.dontForwardFor).toEqual(['@example.com', '@test.com', '@spaces.com']);
     expect(config.footerIcon).toBe('https://icon.example.com/footer.png');
@@ -146,6 +148,7 @@ describe('loadConfig', () => {
     expect(config.logging.eventSummaryIntervalMinutes).toBe(10);
     expect(config.logging.updateDmChannelHeader).toBe(false);
     expect(config.logging.disableEmoji).toBe(false);
+    expect(config.logging.timezone).toBe('UTC');
     expect(config.dryRun).toBe(false);
     expect(config.dontForwardFor).toEqual([]);
     expect(config.footerIcon).toBeUndefined();
@@ -173,5 +176,18 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.logging.disableEmoji).toBe(true);
+    expect(config.logging.timezone).toBe('UTC');
+  });
+
+  it('should parse TIMEZONE environment variable', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.TIMEZONE = 'Europe/Brussels';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.logging.timezone).toBe('Europe/Brussels');
   });
 });

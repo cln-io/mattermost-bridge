@@ -1,11 +1,12 @@
-import { MattermostMessage, MattermostConfig } from './types';
+import { MattermostMessage, MattermostConfig, Config } from './types';
 
 const LOG_PREFIX = '[message-template ]';
 
 export function applyTemplate(
   template: string, 
   message: MattermostMessage, 
-  sourceConfig: MattermostConfig
+  sourceConfig: MattermostConfig,
+  config?: Config
 ): string {
   // Generate link to original message
   const messageLink = generateMessageLink(message, sourceConfig);
@@ -17,7 +18,7 @@ export function applyTemplate(
     .replace(/\{\{username\}\}/g, message.username || 'Unknown')
     .replace(/\{\{message\}\}/g, message.message)
     .replace(/\{\{user_id\}\}/g, message.user_id)
-    .replace(/\{\{timestamp\}\}/g, new Date(message.create_at).toISOString())
+    .replace(/\{\{timestamp\}\}/g, formatTimestamp(message.create_at, config?.logging?.timezone))
     .replace(/\{\{link\}\}/g, messageLink)
     .replace(/\{\{source_name\}\}/g, sourceConfig.name);
 }
@@ -33,4 +34,20 @@ function generateMessageLink(message: MattermostMessage, sourceConfig: Mattermos
   }
   
   return `${normalizedServer}/${sourceConfig.team}/pl/${message.id}`;
+}
+
+function formatTimestamp(timestamp: number, timezone?: string): string {
+  const date = new Date(timestamp);
+  const tz = timezone || 'UTC';
+  
+  return date.toLocaleString('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
 }

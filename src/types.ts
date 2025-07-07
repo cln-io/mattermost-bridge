@@ -23,6 +23,7 @@ export interface LoggingConfig {
   eventSummaryIntervalMinutes: number; // New field for event summary interval
   updateDmChannelHeader: boolean; // Enable status updates in #mattermost-bridge-status private channel
   disableEmoji: boolean; // Disable emojis in console output
+  timezone: string; // Timezone for timestamp formatting (e.g., 'Europe/Brussels', 'CET')
 }
 
 export interface Config {

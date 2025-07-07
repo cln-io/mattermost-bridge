@@ -58,6 +58,10 @@ export function loadConfig(): Config {
   const eventSummaryIntervalMinutes = parseInt(process.env.EVENT_SUMMARY_INTERVAL_MINUTES || '10', 10);
   const updateDmChannelHeader = process.env.UPDATE_DM_CHANNEL_HEADER === 'true';
   const disableEmoji = process.env.DISABLE_EMOJI === 'true';
+  const timezone = process.env.TIMEZONE || 'UTC';
+  if (timezone !== 'UTC') {
+    console.log(`${LOG_PREFIX} ${emoji('🌍')}Timezone configured: ${timezone}`.trim());
+  }
   if (updateDmChannelHeader) {
     console.log(`${LOG_PREFIX} ${emoji('📬')}Status channel updates enabled - status will appear in #mattermost-bridge-status private channel`.trim());
   }
@@ -123,7 +127,8 @@ export function loadConfig(): Config {
       debugWebSocketEvents: debugWebSocketEvents,
       eventSummaryIntervalMinutes: eventSummaryIntervalMinutes,
       updateDmChannelHeader: updateDmChannelHeader,
-      disableEmoji: disableEmoji
+      disableEmoji: disableEmoji,
+      timezone: timezone
     },
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,

@@ -32,7 +32,7 @@ describe('applyTemplate', () => {
 
     expect(result).toContain('From: johndoe\n');
     expect(result).toContain('Message: Hello, this is a test message!\n');
-    expect(result).toContain('Time: 2024-01-15T10:30:00.000Z');
+    expect(result).toContain('Time: 01/15/2024, 10:30:00');
   });
 
   it('should handle missing username', () => {
@@ -72,7 +72,7 @@ describe('applyTemplate', () => {
 
     expect(result).toContain('**johndoe** (ID: user123)');
     expect(result).toContain('\nMessage: "Hello, this is a test message!"');
-    expect(result).toContain('\nPosted at: 2024-01-15T10:30:00.000Z');
+    expect(result).toContain('\nPosted at: 01/15/2024, 10:30:00');
     expect(result).toContain('\nView: https://test.mattermost.com/testteam/pl/msg123');
     expect(result).toContain('\nServer: TestServer');
   });

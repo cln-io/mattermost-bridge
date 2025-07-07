@@ -212,7 +212,8 @@ export class MattermostBridge {
         this.config.left, 
         sourceChannelName,
         profilePictureUrl,
-        this.config.footerIcon
+        this.config.footerIcon,
+        this.config
       );
       
       if (this.config.dryRun) {

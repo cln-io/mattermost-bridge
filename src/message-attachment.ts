@@ -1,4 +1,4 @@
-import { MattermostMessage, MattermostConfig, MessageAttachment } from './types';
+import { MattermostMessage, MattermostConfig, MessageAttachment, Config } from './types';
 import { PADDED_PREFIXES } from './logger-utils';
 
 const LOG_PREFIX = PADDED_PREFIXES.MESSAGE_TEMPLATE;
@@ -8,17 +8,20 @@ export function createMessageAttachment(
   sourceConfig: MattermostConfig,
   sourceChannelName: string,
   userProfilePictureUrl?: string,
-  footerIconUrl?: string
+  footerIconUrl?: string,
+  config?: Config
 ): MessageAttachment {
   // Generate link to original message
   const messageLink = generateMessageLink(message, sourceConfig);
   
-  // Format timestamp as human-readable time
+  // Format timestamp as human-readable time in configured timezone
   const timestamp = new Date(message.create_at);
+  const timezone = config?.logging?.timezone || 'UTC';
   const timeString = timestamp.toLocaleTimeString('en-US', { 
     hour: 'numeric', 
     minute: '2-digit',
-    hour12: true 
+    hour12: true,
+    timeZone: timezone
   });
   
   // Format author name with nickname - @username if nickname exists
