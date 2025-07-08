@@ -297,7 +297,13 @@ export class MattermostBridge {
     
     const intervalMs = this.config.logging.eventSummaryIntervalMinutes * 60 * 1000;
     const nextSummaryTime = new Date(now.getTime() + intervalMs);
-    const nextTimeStr = nextSummaryTime.toTimeString().split(' ')[0];
+    const nextTimeStr = nextSummaryTime.toLocaleString('en-CA', { 
+      hour12: false, 
+      timeZone: this.config.logging.timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
     
     // Generate summary sections
     const leftSummary = this.generateEventSummary(this.leftEvents, 'Left');
