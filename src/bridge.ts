@@ -3,6 +3,7 @@ import { Config, MattermostMessage, ChannelInfo } from './types';
 import { createMessageAttachment } from './message-attachment';
 import { HeartbeatService } from './heartbeat-service';
 import { PADDED_PREFIXES, emoji } from './logger-utils';
+import { LogBuffer } from './log-buffer';
 
 export class MattermostBridge {
   private leftClient: MattermostClient;
@@ -23,15 +24,24 @@ export class MattermostBridge {
   private eventSummaryTimer: NodeJS.Timeout | null = null;
   private lastEventSummaryTime: Date = new Date();
   private eventSummaryCount: number = 0;
+  
+  // Log buffer for capturing stdout
+  private logBuffer: LogBuffer;
 
   constructor(private config: Config) {
     this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this));
     this.rightClient = new MattermostClient(config.right, config.logging, true);
     this.heartbeatService = new HeartbeatService(config.heartbeat);
+    this.logBuffer = new LogBuffer(5000); // Keep up to 5000 log lines
   }
 
   async start(): Promise<void> {
     console.log(`${this.LOG_PREFIX} ${emoji('🚀')}Starting Mattermost Bridge...`.trim());
+    
+    // Start log buffer only if we're not in test mode
+    if (process.env.NODE_ENV !== 'test') {
+      this.logBuffer.start();
+    }
     
     try {
       // Step 1: Ping both servers to check connectivity
@@ -273,6 +283,11 @@ export class MattermostBridge {
     const intervalMs = intervalMinutes * 60 * 1000;
 
     console.log(`${this.LOG_PREFIX} ${emoji('📊')}Starting centralized event summary (every ${intervalMinutes} minutes)`.trim());
+    if (this.config.logging.statsChannelUpdates === 'logs') {
+      console.log(`${this.LOG_PREFIX} ${emoji('📝')}Combined summaries + logs to status channel enabled (last 30 lines per update)`.trim());
+    } else if (this.config.logging.statsChannelUpdates === 'summary') {
+      console.log(`${this.LOG_PREFIX} ${emoji('📊')}Event summaries will be posted to status channel`.trim());
+    }
     
     this.eventSummaryTimer = setInterval(async () => {
       await this.logEventSummary();
@@ -323,9 +338,15 @@ export class MattermostBridge {
     }
     
     // Post to monitoring channel on right client
-    if (this.rightClient && await this.rightClient.getStatusChannelId()) {
+    if (this.rightClient && await this.rightClient.getStatusChannelId() && this.config.logging.statsChannelUpdates !== 'none') {
       try {
-        await this.postEventSummaryToMonitoring(summaryText);
+        if (this.config.logging.statsChannelUpdates === 'logs') {
+          // Combine summary and logs into a single message
+          await this.postCombinedSummaryAndLogs(summaryText);
+        } else {
+          // Just post the summary
+          await this.postEventSummaryToMonitoring(summaryText);
+        }
       } catch (error) {
         console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to post event summary to monitoring:`.trim(), error);
       }
@@ -359,6 +380,54 @@ export class MattermostBridge {
     await this.rightClient.postOrUpdateBridgeSummary(statusChannelId, summaryText);
     console.log(`${this.LOG_PREFIX} ${emoji('📊')}Posted/updated bridge summary in monitoring channel`.trim());
   }
+  
+  private async postCombinedSummaryAndLogs(summaryText: string): Promise<void> {
+    const statusChannelId = await this.rightClient.getStatusChannelId();
+    if (!statusChannelId) {
+      console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}No status channel available for combined summary and logs`.trim());
+      return;
+    }
+    
+    // Get most recent logs (only if log buffer is active)
+    let logs: string[] = [];
+    if (process.env.NODE_ENV !== 'test') {
+      logs = this.logBuffer.getLast(30); // Get last 30 lines, don't clear buffer
+    }
+    
+    // Format combined message
+    const timestamp = new Date().toLocaleString('en-CA', { 
+      hour12: false, 
+      timeZone: this.config.logging.timezone 
+    });
+    
+    let combinedMessage = `${emoji('📊')}**Bridge Activity Summary [${timestamp}]**: ${summaryText}`;
+    
+    // Add logs section if we have logs
+    if (logs.length > 0) {
+      combinedMessage += '\n\n### Recent Logs (Last 30 Lines)\n```\n';
+      combinedMessage += logs.join('\n');
+      combinedMessage += '\n```';
+    }
+    
+    try {
+      // Try to find our oldest message (any message by us) and update it
+      const existingPost = await this.rightClient.findBridgeSummaryMessage(statusChannelId);
+      
+      if (existingPost) {
+        // Update our existing message
+        await this.rightClient.updateMessage(existingPost.id, combinedMessage);
+        const logInfo = logs.length > 0 ? ` and last ${logs.length} log lines` : '';
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}Updated existing message with bridge summary${logInfo}`.trim());
+      } else {
+        // Post new message if we don't have any existing messages
+        await this.rightClient.postMessage(statusChannelId, combinedMessage);
+        const logInfo = logs.length > 0 ? ` and last ${logs.length} log lines` : '';
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Posted new bridge summary${logInfo}`.trim());
+      }
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to post combined summary and logs:`.trim(), error);
+    }
+  }
 
   async stop(): Promise<void> {
     console.log(`${this.LOG_PREFIX} ${emoji('🛑')}Stopping bridge...`.trim());
@@ -370,5 +439,10 @@ export class MattermostBridge {
     // Clear profile picture cache
     this.profilePictureCache.clear();
     console.log(`${this.LOG_PREFIX} ${emoji('🗑️')}Cleared profile picture cache`.trim());
+    
+    // Stop log buffer only if it was started
+    if (process.env.NODE_ENV !== 'test') {
+      this.logBuffer.stop();
+    }
   }
 }

@@ -45,7 +45,7 @@ describe('MattermostBridge', () => {
         level: 'info',
         debugWebSocketEvents: false,
         eventSummaryIntervalMinutes: 10,
-        updateDmChannelHeader: false,
+        statsChannelUpdates: 'none' as const,
         disableEmoji: false,
         timezone: 'UTC'
       },
@@ -597,19 +597,31 @@ describe('MattermostBridge', () => {
     });
 
     it('should update existing bridge summary messages instead of creating new ones', async () => {
-      await bridge.start();
+      // Create a bridge with stats channel updates enabled for this test
+      const summaryConfig = {
+        ...config,
+        logging: {
+          ...config.logging,
+          statsChannelUpdates: 'summary' as const
+        }
+      };
+      
+      const summaryBridge = new MattermostBridge(summaryConfig);
+      await summaryBridge.start();
       
       // Create a mock for the logEventSummary method by triggering it manually
       // We can't directly access private methods, but we can test the flow through the timer
       
       // Verify that the bridge uses postOrUpdateBridgeSummary instead of postMessage
-      const logEventSummary = (bridge as any).logEventSummary;
+      const logEventSummary = (summaryBridge as any).logEventSummary;
       if (logEventSummary) {
-        await logEventSummary.call(bridge);
+        await logEventSummary.call(summaryBridge);
         
         // Should use the update method, not create new messages
         expect(mockRightClient.postOrUpdateBridgeSummary).toHaveBeenCalled();
       }
+      
+      await summaryBridge.stop();
     });
   });
 });

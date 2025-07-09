@@ -2,7 +2,7 @@
 
 A TypeScript-based bridge that forwards messages between channels on different Mattermost instances. Uses regular user accounts for authentication - no bot setup required!
 
-> This project was vibe coded by Claude Opus 4
+> This project was vibe coded with Claude Opus 4
 
 ## Screenshots
 
@@ -18,9 +18,19 @@ The console / app log
 
 ![console](img/console-light.png)
 
-## How It Works
+### Built-in Status Monitoring
 
-![Mattermost Bridge Flow](img/bridge-flow.svg)
+The bridge includes a built-in status channel that provides real-time monitoring of bridge activity and logs. When enabled with `STATS_CHANNEL_UPDATES=logs`, it creates a dedicated #mattermost-bridge-status channel that continuously updates with:
+
+- **Event summaries** - Message counts and bridge activity
+- **Live log feed** - Last 30 log lines updated every 10 minutes  
+- **Single message updates** - No channel spam, just one continuously updated status message
+
+![status channel](img/status-channel.png)
+
+This gives you an always up-to-date view of your bridge health without needing to check Docker logs or the console.
+
+## How It Works
 
 The bridge listens for messages on a source channel and forwards them to a target channel on a different Mattermost instance, preserving:
 - User avatars
@@ -98,7 +108,8 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | `LOG_LEVEL` | Logging verbosity level | ❌ | `info` | `debug`, `info`, `warn`, `error` |
 | `DEBUG_WEBSOCKET_EVENTS` | Enable detailed WebSocket event logging | ❌ | `false` | `true` |
 | `EVENT_SUMMARY_INTERVAL_MINUTES` | How often to log event summaries | ❌ | `10` | `5` |
-| `UPDATE_DM_CHANNEL_HEADER` | Update #mattermost-bridge-status channel | ❌ | `false` | `true` |
+| `STATS_CHANNEL_UPDATES` | What to post to #mattermost-bridge-status | ❌ | `none` | `summary`, `logs` |
+|  | `none` = disable status channel, `summary` = post event summaries, `logs` = combined summaries + last 30 log lines (updates single message) |
 | `DISABLE_EMOJI` | Disable emojis in console output | ❌ | `false` | `true` |
 | `TIMEZONE` | Timezone for timestamp formatting | ❌ | `UTC` | `Europe/Brussels`, `CET` |
 | **Message Filtering** |

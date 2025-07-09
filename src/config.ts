@@ -56,14 +56,23 @@ export function loadConfig(): Config {
   const logLevel = (process.env.LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
   const debugWebSocketEvents = process.env.DEBUG_WEBSOCKET_EVENTS === 'true';
   const eventSummaryIntervalMinutes = parseInt(process.env.EVENT_SUMMARY_INTERVAL_MINUTES || '10', 10);
-  const updateDmChannelHeader = process.env.UPDATE_DM_CHANNEL_HEADER === 'true';
+  // Parse stats channel updates configuration
+  const statsChannelUpdates = process.env.STATS_CHANNEL_UPDATES?.toLowerCase() || 'none';
+  if (!['none', 'summary', 'logs'].includes(statsChannelUpdates)) {
+    console.error(`${LOG_PREFIX} ${emoji('❌')}Invalid STATS_CHANNEL_UPDATES value: ${statsChannelUpdates}. Must be 'none', 'summary', or 'logs'`.trim());
+    process.exit(1);
+  }
   const disableEmoji = process.env.DISABLE_EMOJI === 'true';
   const timezone = process.env.TIMEZONE || 'UTC';
   if (timezone !== 'UTC') {
     console.log(`${LOG_PREFIX} ${emoji('🌍')}Timezone configured: ${timezone}`.trim());
   }
-  if (updateDmChannelHeader) {
-    console.log(`${LOG_PREFIX} ${emoji('📬')}Status channel updates enabled - status will appear in #mattermost-bridge-status private channel`.trim());
+  if (statsChannelUpdates === 'none') {
+    console.log(`${LOG_PREFIX} ${emoji('🔕')}Status channel updates disabled (STATS_CHANNEL_UPDATES=none)`.trim());
+  } else if (statsChannelUpdates === 'summary') {
+    console.log(`${LOG_PREFIX} ${emoji('📊')}Status channel will receive event summaries only (STATS_CHANNEL_UPDATES=summary)`.trim());
+  } else if (statsChannelUpdates === 'logs') {
+    console.log(`${LOG_PREFIX} ${emoji('📝')}Status channel will receive event summaries and logs (STATS_CHANNEL_UPDATES=logs)`.trim());
   }
 
   // Parse dry-run mode
@@ -134,7 +143,7 @@ export function loadConfig(): Config {
       level: logLevel,
       debugWebSocketEvents: debugWebSocketEvents,
       eventSummaryIntervalMinutes: eventSummaryIntervalMinutes,
-      updateDmChannelHeader: updateDmChannelHeader,
+      statsChannelUpdates: statsChannelUpdates as 'none' | 'summary' | 'logs',
       disableEmoji: disableEmoji,
       timezone: timezone
     },

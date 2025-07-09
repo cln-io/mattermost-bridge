@@ -116,7 +116,7 @@ export class MattermostClient {
       console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${response.data.username}`.trim());
       
       // Set up status channel for status updates if enabled and user is not a bot (only for destination)
-      if (this.loggingConfig.updateDmChannelHeader && this.isDestination) {
+      if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination) {
         if (response.data.is_bot) {
           console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
         } else {
@@ -140,7 +140,7 @@ export class MattermostClient {
           }
         }
       } else {
-        console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] Status channel updates disabled (UPDATE_DM_CHANNEL_HEADER=false)`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] Status channel updates disabled (STATS_CHANNEL_UPDATES=none)`.trim());
       }
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}Login failed for ${this.config.name}:`.trim(), error.response?.data || error.message);

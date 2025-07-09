@@ -45,7 +45,7 @@ describe('index', () => {
         level: 'info',
         debugWebSocketEvents: false,
         eventSummaryIntervalMinutes: 10,
-        updateDmChannelHeader: false,
+        statsChannelUpdates: 'none' as const,
         disableEmoji: false,
         timezone: 'UTC'
       },
@@ -103,7 +103,7 @@ describe('index', () => {
         level: 'info',
         debugWebSocketEvents: false,
         eventSummaryIntervalMinutes: 10,
-        updateDmChannelHeader: false,
+        statsChannelUpdates: 'none' as const,
         disableEmoji: false,
         timezone: 'UTC'
       },
