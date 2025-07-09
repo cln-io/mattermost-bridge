@@ -99,13 +99,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Docker Hub Description
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PAT }}
-          repository: ${{ env.IMAGE_NAME }}
-          readme-filepath: ./DOCKERHUB.md
+      # - name: Update Docker Hub Description
+      #   uses: peter-evans/dockerhub-description@v4
+      #   with:
+      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_PAT }}
+      #     repository: ${{ env.IMAGE_NAME }}
+      #     readme-filepath: ./DOCKERHUB.md
 
       - name: Create Release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
