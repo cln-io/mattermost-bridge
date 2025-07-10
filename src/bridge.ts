@@ -32,7 +32,7 @@ export class MattermostBridge {
     this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this));
     this.rightClient = new MattermostClient(config.right, config.logging, true);
     this.heartbeatService = new HeartbeatService(config.heartbeat);
-    this.logBuffer = new LogBuffer(5000); // Keep up to 5000 log lines
+    this.logBuffer = new LogBuffer(5000, config.logging.timezone); // Keep up to 5000 log lines
   }
 
   async start(): Promise<void> {

@@ -1,12 +1,14 @@
 export class LogBuffer {
   private buffer: string[] = [];
   private maxBufferSize: number;
+  private timezone: string;
   private originalConsoleLog: typeof console.log;
   private originalConsoleError: typeof console.error;
   private originalConsoleWarn: typeof console.warn;
   
-  constructor(maxBufferSize: number = 1000) {
+  constructor(maxBufferSize: number = 1000, timezone: string = 'UTC') {
     this.maxBufferSize = maxBufferSize;
+    this.timezone = timezone;
     this.originalConsoleLog = console.log;
     this.originalConsoleError = console.error;
     this.originalConsoleWarn = console.warn;
@@ -50,7 +52,10 @@ export class LogBuffer {
   }
   
   private addToBuffer(message: string): void {
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date().toLocaleString('en-CA', { 
+      hour12: false, 
+      timeZone: this.timezone 
+    });
     this.buffer.push(`${timestamp} ${message}`);
     
     // Keep buffer size under control

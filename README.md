@@ -23,7 +23,7 @@ The console / app log
 The bridge includes a built-in status channel that provides real-time monitoring of bridge activity and logs. When enabled with `STATS_CHANNEL_UPDATES=logs`, it creates a dedicated #mattermost-bridge-status channel that continuously updates with:
 
 - **Event summaries** - Message counts and bridge activity
-- **Live log feed** - Last 30 log lines updated every 10 minutes  
+- **Live log feed** - Last 30 log lines updated every 10 minutes (respects TIMEZONE setting)
 - **Single message updates** - No channel spam, just one continuously updated status message
 
 ![status channel](img/status-channel.png)
