@@ -79,7 +79,9 @@ MATTERMOST_RIGHT_USERNAME=bridge-user@target.com
 MATTERMOST_RIGHT_PASSWORD_B64=<base64-encoded-password>
 
 # Required: Channel IDs
-SOURCE_CHANNEL_ID=abc123def456...
+SOURCE_CHANNEL_ID=abc123def456...  # Single channel
+# or
+SOURCE_CHANNEL_ID=abc123,def456,ghi789  # Multiple channels (comma-separated)
 TARGET_CHANNEL_ID=xyz789uvw012...
 ```
 
@@ -102,7 +104,7 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | `MATTERMOST_RIGHT_TEAM` | Team name (for message links) | ❌ | - | `team-name` |
 | `MATTERMOST_RIGHT_MFA_SEED` | MFA/2FA seed (if MFA enabled) | ❌ | - | `GEZDGNBVGY3TQOJQ` |
 | **Bridge Configuration** |
-| `SOURCE_CHANNEL_ID` | ID of the channel to monitor | ✅ | - | `abc123def456...` |
+| `SOURCE_CHANNEL_ID` | ID of the channel(s) to monitor. Can be a single ID or comma-separated list | ✅ | - | `abc123def456...` or `abc123,def456,ghi789` |
 | `TARGET_CHANNEL_ID` | ID of the channel to post to | ✅ | - | `xyz789uvw012...` |
 | **Logging & Display** |
 | `LOG_LEVEL` | Logging verbosity level | ❌ | `info` | `debug`, `info`, `warn`, `error` |

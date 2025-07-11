@@ -34,7 +34,7 @@ MATTERMOST_RIGHT_PASSWORD_B64=base64_encoded_password
 MATTERMOST_RIGHT_MFA_SEED=optional_mfa_seed
 
 # Bridge Configuration
-SOURCE_CHANNEL_ID=channel_id_from_source
+SOURCE_CHANNEL_ID=channel_id_from_source  # Single channel or comma-separated list
 TARGET_CHANNEL_ID=channel_id_from_target
 ```
 

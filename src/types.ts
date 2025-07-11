@@ -8,7 +8,7 @@ export interface MattermostConfig {
 }
 
 export interface BridgeRule {
-  sourceChannelId: string;
+  sourceChannelId: string | string[];
   targetChannelId: string;
 }
 

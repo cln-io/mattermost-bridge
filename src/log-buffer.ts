@@ -5,6 +5,9 @@ export class LogBuffer {
   private originalConsoleLog: typeof console.log;
   private originalConsoleError: typeof console.error;
   private originalConsoleWarn: typeof console.warn;
+  private pendingBatch: string[] = [];
+  private batchSize: number = 5;
+  private channelContext: Map<string, string> = new Map();
   
   constructor(maxBufferSize: number = 1000, timezone: string = 'UTC') {
     this.maxBufferSize = maxBufferSize;
@@ -21,7 +24,7 @@ export class LogBuffer {
         typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
       ).join(' ');
       
-      this.addToBuffer(`[LOG] ${message}`);
+      this.addToBuffer(`[LOG] ${this.formatMessageWithChannel(message)}`);
       this.originalConsoleLog.apply(console, args);
     };
     
@@ -30,7 +33,7 @@ export class LogBuffer {
         typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
       ).join(' ');
       
-      this.addToBuffer(`[ERROR] ${message}`);
+      this.addToBuffer(`[ERROR] ${this.formatMessageWithChannel(message)}`);
       this.originalConsoleError.apply(console, args);
     };
     
@@ -39,7 +42,7 @@ export class LogBuffer {
         typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
       ).join(' ');
       
-      this.addToBuffer(`[WARN] ${message}`);
+      this.addToBuffer(`[WARN] ${this.formatMessageWithChannel(message)}`);
       this.originalConsoleWarn.apply(console, args);
     };
   }

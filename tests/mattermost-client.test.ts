@@ -411,7 +411,7 @@ describe('MattermostClient', () => {
     });
 
     it('should connect WebSocket and authenticate', () => {
-      client.connectWebSocket('channel123', onMessage, 'test-channel');
+      client.connectWebSocket('channel123', onMessage);
 
       expect(WebSocket).toHaveBeenCalledWith('wss://test.mattermost.com/api/v4/websocket');
 
@@ -481,6 +481,73 @@ describe('MattermostClient', () => {
       expect(onMessage).not.toHaveBeenCalled();
     });
 
+    it('should support monitoring multiple channels', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: { id: 'user123', username: 'testuser', nickname: 'Test User' }
+      });
+
+      client.connectWebSocket(['channel1', 'channel2', 'channel3'], onMessage);
+      wsOpenHandler();
+
+      // Message from channel1 - should be processed
+      const message1 = {
+        event: 'posted',
+        data: {
+          post: JSON.stringify({
+            id: 'msg1',
+            channel_id: 'channel1',
+            user_id: 'user123',
+            message: 'Message 1',
+            create_at: Date.now()
+          })
+        }
+      };
+
+      await wsMessageHandler(JSON.stringify(message1));
+      expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'msg1',
+        channel_id: 'channel1'
+      }));
+
+      // Message from channel2 - should be processed
+      const message2 = {
+        event: 'posted',
+        data: {
+          post: JSON.stringify({
+            id: 'msg2',
+            channel_id: 'channel2',
+            user_id: 'user123',
+            message: 'Message 2',
+            create_at: Date.now()
+          })
+        }
+      };
+
+      await wsMessageHandler(JSON.stringify(message2));
+      expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'msg2',
+        channel_id: 'channel2'
+      }));
+
+      // Message from unmonitored channel - should be ignored
+      const message4 = {
+        event: 'posted',
+        data: {
+          post: JSON.stringify({
+            id: 'msg4',
+            channel_id: 'channel4',
+            user_id: 'user123',
+            message: 'Message 4',
+            create_at: Date.now()
+          })
+        }
+      };
+
+      onMessage.mockClear();
+      await wsMessageHandler(JSON.stringify(message4));
+      expect(onMessage).not.toHaveBeenCalled();
+    });
+
     it('should handle WebSocket errors', () => {
       const consoleSpy = jest.spyOn(console, 'error');
       client.connectWebSocket('channel123', onMessage);
@@ -496,7 +563,7 @@ describe('MattermostClient', () => {
 
     it('should reconnect on close', async () => {
       const consoleSpy = jest.spyOn(console, 'log');
-      client.connectWebSocket('channel123', onMessage, 'test-channel');
+      client.connectWebSocket('channel123', onMessage);
 
       // Trigger the close handler
       await wsCloseHandler();

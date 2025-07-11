@@ -119,9 +119,8 @@ describe('MattermostBridge', () => {
       expect(mockLeftClient.getChannelById).toHaveBeenCalledWith('source123');
       expect(mockRightClient.getChannelById).toHaveBeenCalledWith('target456');
       expect(mockLeftClient.connectWebSocket).toHaveBeenCalledWith(
-        'source123',
-        expect.any(Function),
-        'source-channel'
+        ['source123'],
+        expect.any(Function)
       );
       expect(mockHeartbeatService.start).toHaveBeenCalled();
     });
@@ -205,7 +204,7 @@ describe('MattermostBridge', () => {
       mockRightClient.getChannelById.mockResolvedValue(targetChannelInfo);
       mockHeartbeatService.start.mockImplementation();
 
-      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
         handleMessage = onMsg;
       });
 
@@ -325,7 +324,7 @@ describe('MattermostBridge', () => {
       bridge = new MattermostBridge({ ...config, dryRun: true });
       
       // Re-setup with dry run bridge
-      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
         handleMessage = onMsg;
       });
       await bridge.start();
@@ -532,7 +531,7 @@ describe('MattermostBridge', () => {
 
       let handleMessage: (message: MattermostMessage) => Promise<void>;
       
-      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
         handleMessage = onMsg;
       });
       
@@ -576,7 +575,7 @@ describe('MattermostBridge', () => {
 
       let handleMessage: (message: MattermostMessage) => Promise<void>;
       
-      mockLeftClient.connectWebSocket.mockImplementation((channelId, onMsg) => {
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
         handleMessage = onMsg;
       });
       
@@ -594,6 +593,78 @@ describe('MattermostBridge', () => {
       
       // Verify dry run logging and that bridge events would be tracked (message_dry_run event)
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[DRY RUN]'));
+    });
+
+    it('should support multiple source channels', async () => {
+      // Create config with multiple source channels
+      const multiChannelConfig = {
+        ...config,
+        rule: {
+          sourceChannelId: ['source1', 'source2', 'source3'],
+          targetChannelId: 'target456'
+        }
+      };
+
+      const multiChannelBridge = new MattermostBridge(multiChannelConfig);
+
+      // Mock channel info for each source channel
+      const channelInfos = [
+        { id: 'source1', name: 'channel-1', displayName: 'Channel 1', type: 'O' },
+        { id: 'source2', name: 'channel-2', displayName: 'Channel 2', type: 'O' },
+        { id: 'source3', name: 'channel-3', displayName: 'Channel 3', type: 'O' }
+      ];
+
+      mockLeftClient.getChannelById.mockImplementation((id) => {
+        const info = channelInfos.find(ch => ch.id === id);
+        return Promise.resolve(info || null);
+      });
+
+      await multiChannelBridge.start();
+
+      // Verify all channels were looked up
+      expect(mockLeftClient.getChannelById).toHaveBeenCalledWith('source1');
+      expect(mockLeftClient.getChannelById).toHaveBeenCalledWith('source2');
+      expect(mockLeftClient.getChannelById).toHaveBeenCalledWith('source3');
+
+      // Verify WebSocket connection was made with all channels
+      expect(mockLeftClient.connectWebSocket).toHaveBeenCalledTimes(1);
+      expect(mockLeftClient.connectWebSocket).toHaveBeenCalledWith(
+        ['source1', 'source2', 'source3'],
+        expect.any(Function)
+      );
+    });
+
+    it('should handle single source channel when configured as string', async () => {
+      await bridge.start();
+
+      // Verify single channel was handled correctly
+      expect(mockLeftClient.getChannelById).toHaveBeenCalledWith('source123');
+      expect(mockLeftClient.connectWebSocket).toHaveBeenCalledTimes(1);
+      expect(mockLeftClient.connectWebSocket).toHaveBeenCalledWith(['source123'], expect.any(Function));
+    });
+
+    it('should fail if any source channel is not found', async () => {
+      const multiChannelConfig = {
+        ...config,
+        rule: {
+          sourceChannelId: ['source1', 'source2', 'missing'],
+          targetChannelId: 'target456'
+        }
+      };
+
+      const multiChannelBridge = new MattermostBridge(multiChannelConfig);
+
+      mockLeftClient.getChannelById.mockImplementation((id) => {
+        if (id === 'missing') return Promise.resolve(null);
+        return Promise.resolve({
+          id,
+          name: `channel-${id}`,
+          displayName: `Channel ${id}`,
+          type: 'O'
+        });
+      });
+
+      await expect(multiChannelBridge.start()).rejects.toThrow("Source channel 'missing' not found on LeftServer");
     });
 
     it('should update existing bridge summary messages instead of creating new ones', async () => {

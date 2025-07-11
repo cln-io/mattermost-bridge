@@ -114,6 +114,19 @@ export function loadConfig(): Config {
   console.log(`${LOG_PREFIX} ${emoji('👤')}Author names show: Nickname - @username (if nickname set)`.trim());
   console.log(`${LOG_PREFIX} ${emoji('🎨')}Format: [Profile Picture] AuthorName | Message | Footer: ServerName • #channel • Time`.trim());
 
+  // Parse source channel ID(s) - can be a single ID or comma-separated list
+  let sourceChannelId: string | string[];
+  const sourceChannelIdRaw = process.env.SOURCE_CHANNEL_ID!;
+  
+  if (sourceChannelIdRaw.includes(',')) {
+    // Parse as array
+    sourceChannelId = sourceChannelIdRaw.split(',').map(id => id.trim()).filter(id => id.length > 0);
+    console.log(`${LOG_PREFIX} ${emoji('📋')}Monitoring ${sourceChannelId.length} source channels`.trim());
+  } else {
+    // Keep as single string
+    sourceChannelId = sourceChannelIdRaw;
+  }
+
   return {
     left: {
       name: process.env.MATTERMOST_LEFT_NAME!,
@@ -132,7 +145,7 @@ export function loadConfig(): Config {
       team: process.env.MATTERMOST_RIGHT_TEAM
     },
     rule: {
-      sourceChannelId: process.env.SOURCE_CHANNEL_ID!,
+      sourceChannelId: sourceChannelId,
       targetChannelId: process.env.TARGET_CHANNEL_ID!
     },
     heartbeat: {

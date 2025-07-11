@@ -12,6 +12,8 @@ export class MattermostClient {
   private userId: string = '';
   private statusChannelId: string = '';
   private readonly LOG_PREFIX = '[mattermost-client]';
+  private monitoredChannels: Set<string> = new Set();
+  private messageHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   
   constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventCallback?: (eventType: string) => void) {
     // Normalize server URL to prevent double slashes
@@ -124,7 +126,7 @@ export class MattermostClient {
             const statusChannel = await this.findOrCreateStatusChannel();
             if (statusChannel) {
               this.statusChannelId = statusChannel.id;
-              console.log(`${this.LOG_PREFIX} ${emoji('📬')}[${this.config.name}] Status channel updates enabled: ${this.statusChannelId}`.trim());
+              console.log(`${this.LOG_PREFIX} ${emoji('📬')}[${this.config.name}] Status channel updates enabled: (status)[${this.statusChannelId}]`.trim());
               
               // Post or update initial status message
               try {
@@ -164,10 +166,10 @@ export class MattermostClient {
       };
     } catch (error: any) {
       if (error.response?.status === 404) {
-        console.warn(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Channel ID '${channelId}' not found`.trim());
+        console.warn(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Channel ID not found: (unknown)[${channelId}]`.trim());
         return null;
       }
-      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error getting channel ${channelId}:`.trim(), error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error getting channel (unknown)[${channelId}]:`.trim(), error.response?.data || error.message);
       throw error;
     }
   }
@@ -262,7 +264,7 @@ export class MattermostClient {
       // First try to find existing channel
       const existingChannel = await this.getChannelByName('mattermost-bridge-status');
       if (existingChannel) {
-        console.log(`${this.LOG_PREFIX} ${emoji('📋')}[${this.config.name}] Found existing status channel: ${existingChannel.id}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📋')}[${this.config.name}] Found existing status channel: (${existingChannel.name})[${existingChannel.id}]`.trim());
         return existingChannel;
       }
       
@@ -271,7 +273,7 @@ export class MattermostClient {
       const newChannel = await this.createPrivateChannel('mattermost-bridge-status', 'mattermost-bridge-status');
       
       if (newChannel) {
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Created status channel: ${newChannel.id}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Created status channel: (${newChannel.name})[${newChannel.id}]`.trim());
       }
       
       return newChannel;
@@ -555,17 +557,26 @@ export class MattermostClient {
     }
   }
 
-  connectWebSocket(channelId: string, onMessage: (msg: MattermostMessage) => Promise<void>, channelName?: string): void {
+  connectWebSocket(channelIds: string | string[], onMessage: (msg: MattermostMessage) => Promise<void>): void {
+    // Store the channels we're monitoring
+    const channelsArray = Array.isArray(channelIds) ? channelIds : [channelIds];
+    this.monitoredChannels = new Set(channelsArray);
+    this.messageHandler = onMessage;
+    
+    // If WebSocket is already connected, just update the monitored channels
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Updated monitored channels: ${channelsArray.join(', ')}`);
+      return;
+    }
     // Use normalized server URL for WebSocket connection
     const normalizedServer = this.normalizeServerUrl(this.config.server);
     const wsUrl = normalizedServer.replace('http', 'ws') + '/api/v4/websocket';
     
-    const channelDisplay = channelName ? `#${channelName}` : channelId;
-    console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Connecting WebSocket to monitor channel: ${channelDisplay} (${channelId})`);
+    console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Connecting WebSocket to monitor ${channelsArray.length} channel(s)`);
     
     if (this.loggingConfig.debugWebSocketEvents) {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket URL: ${wsUrl}`);
-      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Note: WebSocket receives all channel events, filtering to: ${channelId}`);
+      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Monitoring channels: ${channelsArray.join(', ')}`);
     }
     
     this.ws = new WebSocket(wsUrl);
@@ -607,12 +618,12 @@ export class MattermostClient {
         if (eventType === 'posted') {
           const post = JSON.parse(event.data.post);
           
-          // IMPORTANT: Only process messages from the channel we're monitoring
-          if (post.channel_id !== channelId) {
+          // Check if this channel is being monitored
+          if (!this.monitoredChannels.has(post.channel_id)) {
             if (this.loggingConfig.debugWebSocketEvents) {
               console.log(
                 `${this.LOG_PREFIX} 🚫 [${this.config.name}] ` +
-                `Ignoring message from different channel: ${post.channel_id} (monitoring: ${channelId})`
+                `Ignoring message from unmonitored channel: ${post.channel_id}`
               );
             }
             return; // Skip this message
@@ -630,12 +641,16 @@ export class MattermostClient {
             file_ids:   post.file_ids || []
           };
 
-          console.log(
-            `${this.LOG_PREFIX} ✉️ [${this.config.name}] ` +
-            `Received message from #${channelName || channelId} (${message.id})`
-          );
+          if (this.loggingConfig.debugWebSocketEvents) {
+            console.log(
+              `${this.LOG_PREFIX} ✉️ [${this.config.name}] ` +
+              `Message ${message.id} received in channel (${post.channel_id})`
+            );
+          }
 
-          await onMessage(message);
+          if (this.messageHandler) {
+            await this.messageHandler(message);
+          }
 
         } else if (eventType === 'hello') {
           console.log(
@@ -709,11 +724,16 @@ export class MattermostClient {
     this.ws.on('close', async () => {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket connection closed`);
       
+      // Clear the WebSocket reference since it's closed
+      this.ws = null;
       
       // Reconnect after 5 seconds
       setTimeout(() => {
         console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Attempting to reconnect WebSocket...`);
-        this.connectWebSocket(channelId, onMessage, channelName);
+        // Reconnect with the same channels and handler
+        if (this.monitoredChannels.size > 0 && this.messageHandler) {
+          this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler);
+        }
       }, 5000);
     });
   }
@@ -723,6 +743,8 @@ export class MattermostClient {
       this.ws.close();
       this.ws = null;
     }
+    this.monitoredChannels.clear();
+    this.messageHandler = null;
   }
 
   async getStatusChannelId(): Promise<string | null> {

@@ -203,4 +203,52 @@ describe('loadConfig', () => {
 
     expect(config.leftMessageEmoji).toBe('white_check_mark');
   });
+
+  it('should parse SOURCE_CHANNEL_ID as a single string', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.SOURCE_CHANNEL_ID = 'single123';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.rule.sourceChannelId).toBe('single123');
+  });
+
+  it('should parse SOURCE_CHANNEL_ID as an array when comma-separated', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.SOURCE_CHANNEL_ID = 'channel1,channel2,channel3';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.rule.sourceChannelId).toEqual(['channel1', 'channel2', 'channel3']);
+  });
+
+  it('should handle SOURCE_CHANNEL_ID with spaces around commas', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.SOURCE_CHANNEL_ID = 'channel1, channel2 , channel3';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.rule.sourceChannelId).toEqual(['channel1', 'channel2', 'channel3']);
+  });
+
+  it('should filter out empty channel IDs', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.SOURCE_CHANNEL_ID = 'channel1,,channel2, ,channel3';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.rule.sourceChannelId).toEqual(['channel1', 'channel2', 'channel3']);
+  });
 });
