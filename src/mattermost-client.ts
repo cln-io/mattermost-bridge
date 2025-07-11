@@ -4,6 +4,7 @@ import { authenticator } from 'otplib';
 import { MattermostConfig, MattermostMessage, Channel, ChannelInfo, User, LoggingConfig, MessageAttachment } from './types';
 import FormData from 'form-data';
 import { emoji } from './logger-utils';
+import { LogBuffer } from './log-buffer';
 
 export class MattermostClient {
   private api: AxiosInstance;
@@ -15,11 +16,10 @@ export class MattermostClient {
   private monitoredChannels: Set<string> = new Set();
   private messageHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   
-  // Cache for user information to avoid repeated API calls
-  private userCache: Map<string, User> = new Map();
+  // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
   
-  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventCallback?: (eventType: string) => void) {
+  constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventCallback?: (eventType: string) => void, private logBuffer?: LogBuffer) {
     // Normalize server URL to prevent double slashes
     const normalizedServer = this.normalizeServerUrl(config.server);
     
@@ -454,21 +454,13 @@ export class MattermostClient {
   }
 
   async getUser(userId: string): Promise<User> {
-    // Check cache first
-    if (this.userCache.has(userId)) {
-      return this.userCache.get(userId)!;
-    }
-
     try {
       const response = await this.api.get(`/users/${userId}`);
       const user = response.data;
       
-      // Cache the result
-      this.userCache.set(userId, user);
-      
       return user;
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} Error getting user ${userId}:`, error.response?.data || error.message);
+      console.error(`${this.LOG_PREFIX} Error getting user (unknown)[${userId}]:`, error.response?.data || error.message);
       throw error;
     }
   }
@@ -485,7 +477,7 @@ export class MattermostClient {
       });
       return Buffer.from(response.data);
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to download profile picture for user ${userId}:`.trim(), error.response?.status || error.message);
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to download profile picture for user (unknown)[${userId}]:`.trim(), error.response?.status || error.message);
       return null;
     }
   }
@@ -656,6 +648,15 @@ export class MattermostClient {
           }
           
           const user = await this.getUser(post.user_id);
+          
+          // Set context for LogBuffer if available
+          if (this.logBuffer) {
+            const channelInfo = await this.getChannelById(post.channel_id);
+            const channelName = channelInfo?.name || post.channel_id;
+            this.logBuffer.setChannelContext('websocket', `${channelName}[${post.channel_id}]`);
+            this.logBuffer.setUserContext('websocket', `${user.username}[${post.user_id}]`);
+          }
+          
           const message: MattermostMessage = {
             id:         post.id,
             channel_id: post.channel_id,
@@ -670,12 +671,18 @@ export class MattermostClient {
           if (this.loggingConfig.debugWebSocketEvents) {
             console.log(
               `${this.LOG_PREFIX} ✉️ [${this.config.name}] ` +
-              `Message ${message.id} received in channel (${post.channel_id})`
+              `Message ${message.id} from (${user.username})[${post.user_id}] received in channel (${post.channel_id})`
             );
           }
 
           if (this.messageHandler) {
             await this.messageHandler(message);
+          }
+          
+          // Clear WebSocket context after processing
+          if (this.logBuffer) {
+            this.logBuffer.clearChannelContext('websocket');
+            this.logBuffer.clearUserContext('websocket');
           }
 
         } else if (eventType === 'hello') {
@@ -772,25 +779,16 @@ export class MattermostClient {
     this.monitoredChannels.clear();
     this.messageHandler = null;
     
-    // Clear caches to free memory
-    this.userCache.clear();
+    // Clear cache to free memory
     this.channelCache.clear();
   }
 
   // Methods to access cached information without API calls
-  getCachedUser(userId: string): User | null {
-    return this.userCache.get(userId) || null;
-  }
-
   getCachedChannel(channelId: string): ChannelInfo | null {
     return this.channelCache.get(channelId) || null;
   }
 
   // Method to pre-populate cache (useful for optimization)
-  setCachedUser(userId: string, user: User): void {
-    this.userCache.set(userId, user);
-  }
-
   setCachedChannel(channelId: string, channel: ChannelInfo): void {
     this.channelCache.set(channelId, channel);
   }

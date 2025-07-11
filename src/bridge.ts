@@ -29,19 +29,19 @@ export class MattermostBridge {
   private logBuffer: LogBuffer;
 
   constructor(private config: Config) {
-    this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this));
-    this.rightClient = new MattermostClient(config.right, config.logging, true);
-    this.heartbeatService = new HeartbeatService(config.heartbeat);
+    // Create log buffer first so we can pass it to clients
     this.logBuffer = new LogBuffer(5000, config.logging.timezone); // Keep up to 5000 log lines
+    
+    this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this), this.logBuffer);
+    this.rightClient = new MattermostClient(config.right, config.logging, true, undefined, this.logBuffer);
+    this.heartbeatService = new HeartbeatService(config.heartbeat);
   }
 
   async start(): Promise<void> {
     console.log(`${this.LOG_PREFIX} ${emoji('🚀')}Starting Mattermost Bridge...`.trim());
     
-    // Start log buffer only if we're not in test mode
-    if (process.env.NODE_ENV !== 'test') {
-      this.logBuffer.start();
-    }
+    // Start log buffer to capture and enhance all logs
+    this.logBuffer.start();
     
     try {
       // Step 1: Ping both servers to check connectivity
@@ -154,7 +154,7 @@ export class MattermostBridge {
       this.logBuffer.setChannelContext('current', channelContext);
       this.logBuffer.setUserContext('current', userContext);
       
-      console.log(`${this.LOG_PREFIX} ${emoji('📨')}(${sourceChannelName})[${sourceChannelId}] ${message.nickname ? `${message.nickname} (@${message.username})` : message.username}: ${message.message}`.trim());
+      console.log(`${this.LOG_PREFIX} ${emoji('📨')}(${sourceChannelName})[${sourceChannelId}] (${message.nickname ? `${message.nickname} (@${message.username})` : message.username})[${message.user_id}]: ${message.message}`.trim());
       
       // Check if message has file attachments
       if (message.file_ids && message.file_ids.length > 0) {
@@ -416,11 +416,8 @@ export class MattermostBridge {
       return;
     }
     
-    // Get most recent logs (only if log buffer is active)
-    let logs: string[] = [];
-    if (process.env.NODE_ENV !== 'test') {
-      logs = this.logBuffer.getLast(30); // Get last 30 lines, don't clear buffer
-    }
+    // Get most recent logs from buffer
+    const logs = this.logBuffer.getLast(30); // Get last 30 lines, don't clear buffer
     
     // Format combined message
     const timestamp = new Date().toLocaleString('en-CA', { 
@@ -468,9 +465,7 @@ export class MattermostBridge {
     this.profilePictureCache.clear();
     console.log(`${this.LOG_PREFIX} ${emoji('🗑️')}Cleared profile picture cache`.trim());
     
-    // Stop log buffer only if it was started
-    if (process.env.NODE_ENV !== 'test') {
-      this.logBuffer.stop();
-    }
+    // Stop log buffer
+    this.logBuffer.stop();
   }
 }
