@@ -15,6 +15,10 @@ export class MattermostClient {
   private monitoredChannels: Set<string> = new Set();
   private messageHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   
+  // Cache for user information to avoid repeated API calls
+  private userCache: Map<string, User> = new Map();
+  private channelCache: Map<string, ChannelInfo> = new Map();
+  
   constructor(private config: MattermostConfig, private loggingConfig: LoggingConfig, private isDestination: boolean = false, private eventCallback?: (eventType: string) => void) {
     // Normalize server URL to prevent double slashes
     const normalizedServer = this.normalizeServerUrl(config.server);
@@ -154,19 +158,31 @@ export class MattermostClient {
   }
 
   async getChannelById(channelId: string): Promise<ChannelInfo | null> {
+    // Check cache first
+    if (this.channelCache.has(channelId)) {
+      return this.channelCache.get(channelId)!;
+    }
+
     try {
       const response = await this.api.get(`/channels/${channelId}`);
       const channel = response.data;
       
-      return {
+      const channelInfo: ChannelInfo = {
         id: channel.id,
         name: channel.name,
         displayName: channel.display_name || channel.name,
         type: channel.type
       };
+
+      // Cache the result
+      this.channelCache.set(channelId, channelInfo);
+      
+      return channelInfo;
     } catch (error: any) {
       if (error.response?.status === 404) {
         console.warn(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Channel ID not found: (unknown)[${channelId}]`.trim());
+        // Cache null result to avoid repeated API calls
+        this.channelCache.set(channelId, null as any);
         return null;
       }
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error getting channel (unknown)[${channelId}]:`.trim(), error.response?.data || error.message);
@@ -438,9 +454,19 @@ export class MattermostClient {
   }
 
   async getUser(userId: string): Promise<User> {
+    // Check cache first
+    if (this.userCache.has(userId)) {
+      return this.userCache.get(userId)!;
+    }
+
     try {
       const response = await this.api.get(`/users/${userId}`);
-      return response.data;
+      const user = response.data;
+      
+      // Cache the result
+      this.userCache.set(userId, user);
+      
+      return user;
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error getting user ${userId}:`, error.response?.data || error.message);
       throw error;
@@ -745,6 +771,28 @@ export class MattermostClient {
     }
     this.monitoredChannels.clear();
     this.messageHandler = null;
+    
+    // Clear caches to free memory
+    this.userCache.clear();
+    this.channelCache.clear();
+  }
+
+  // Methods to access cached information without API calls
+  getCachedUser(userId: string): User | null {
+    return this.userCache.get(userId) || null;
+  }
+
+  getCachedChannel(channelId: string): ChannelInfo | null {
+    return this.channelCache.get(channelId) || null;
+  }
+
+  // Method to pre-populate cache (useful for optimization)
+  setCachedUser(userId: string, user: User): void {
+    this.userCache.set(userId, user);
+  }
+
+  setCachedChannel(channelId: string, channel: ChannelInfo): void {
+    this.channelCache.set(channelId, channel);
   }
 
   async getStatusChannelId(): Promise<string | null> {
