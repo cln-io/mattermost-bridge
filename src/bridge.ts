@@ -140,10 +140,15 @@ export class MattermostBridge {
   }
 
   private async handleMessage(message: MattermostMessage, sourceChannelId: string): Promise<void> {
+    const sourceChannelInfo = this.sourceChannelInfos.get(sourceChannelId);
+    const sourceChannelName = sourceChannelInfo?.name || sourceChannelId;
+    const targetChannelName = this.targetChannelInfo?.name || this.targetChannelId;
+    
+    // Set channel context for log buffer to include channel info in all logs
+    const channelContext = `${sourceChannelName}[${sourceChannelId}]`;
+    this.logBuffer.setChannelContext('current', channelContext);
+    
     try {
-      const sourceChannelInfo = this.sourceChannelInfos.get(sourceChannelId);
-      const sourceChannelName = sourceChannelInfo?.name || sourceChannelId;
-      const targetChannelName = this.targetChannelInfo?.name || this.targetChannelId;
       
       console.log(`${this.LOG_PREFIX} ${emoji('📨')}(${sourceChannelName})[${sourceChannelId}] ${message.nickname ? `${message.nickname} (@${message.username})` : message.username}: ${message.message}`.trim());
       
@@ -281,6 +286,9 @@ export class MattermostBridge {
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}(${sourceChannelName})[${sourceChannelId}] Error bridging message:`.trim(), error);
+    } finally {
+      // Clear channel context to prevent bleeding between messages
+      this.logBuffer.clearChannelContext('current');
     }
   }
 

@@ -54,6 +54,36 @@ export class LogBuffer {
     console.warn = this.originalConsoleWarn;
   }
   
+  private formatMessageWithChannel(message: string): string {
+    // Check if message already has channel information in format (name)[id] or [name] pattern
+    const existingChannelPattern = /\([^)]+\)\[[^\]]+\]|\[[^\]]+\]/;
+    if (existingChannelPattern.test(message)) {
+      return message; // Message already has channel info, don't modify
+    }
+
+    // Try to extract channel info from current context
+    const channelInfo = this.getCurrentChannelContext();
+    if (channelInfo) {
+      return `(${channelInfo}) ${message}`;
+    }
+    return message;
+  }
+
+  private getCurrentChannelContext(): string | null {
+    // Try to extract channel info from current context
+    // Look for the most recently set context
+    const contexts = Array.from(this.channelContext.values());
+    return contexts.length > 0 ? contexts[contexts.length - 1] : null;
+  }
+
+  setChannelContext(contextId: string, channelInfo: string): void {
+    this.channelContext.set(contextId, channelInfo);
+  }
+
+  clearChannelContext(contextId: string): void {
+    this.channelContext.delete(contextId);
+  }
+
   private addToBuffer(message: string): void {
     const timestamp = new Date().toLocaleString('en-CA', { 
       hour12: false, 
