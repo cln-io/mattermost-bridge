@@ -75,6 +75,7 @@ export async function main() {
       await bridge.stop();
     }
     process.exit(1);
+    return; // Prevent further execution if process.exit is mocked
   }
 }
 

@@ -60,12 +60,16 @@ describe('index', () => {
 
   afterEach(() => {
     processExitSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+    
     // Remove all listeners to prevent interference between tests
     process.removeAllListeners('SIGINT');
     process.removeAllListeners('SIGTERM');
     process.removeAllListeners('SIGQUIT');
     process.removeAllListeners('uncaughtException');
     process.removeAllListeners('unhandledRejection');
+    process.removeAllListeners('SIGUSR1');
   });
 
   it('should start bridge successfully', async () => {
@@ -216,14 +220,18 @@ describe('index', () => {
     // Call main but don't await it since process.exit will terminate
     const mainPromise = main();
     
-    // Wait for the async operations to complete
-    await new Promise(resolve => setImmediate(resolve));
+    // Wait for the async operations to complete - use longer timeout
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Application failed to start'), error);
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);
     
-    // Clean up the promise
-    await mainPromise.catch(() => {});
+    // Clean up the promise - handle both resolve and reject
+    try {
+      await mainPromise;
+    } catch (e) {
+      // Expected to throw since we're mocking a startup failure
+    }
   });
 });
