@@ -5,28 +5,28 @@ describe('createMessageAttachment', () => {
   let dateToLocaleTimeStringSpy: jest.SpyInstance;
   
   beforeAll(() => {
-    // Mock toLocaleTimeString to return consistent results
+    // Mock toLocaleTimeString to return consistent results in 24-hour format
     dateToLocaleTimeStringSpy = jest.spyOn(Date.prototype, 'toLocaleTimeString')
       .mockImplementation(function(this: Date, locales, options) {
-        // For 2024-01-15T14:30:00Z, return 2:30 PM
+        // For 2024-01-15T14:30:00Z, return 14:30
         if (this.getTime() === new Date('2024-01-15T14:30:00Z').getTime()) {
-          return '2:30 PM';
+          return '14:30';
         }
-        // For 2024-01-15T09:15:00Z, return 9:15 AM
+        // For 2024-01-15T09:15:00Z, return 09:15
         if (this.getTime() === new Date('2024-01-15T09:15:00Z').getTime()) {
-          return '9:15 AM';
+          return '09:15';
         }
-        // For 2024-01-15T00:00:00Z, return 12:00 AM
+        // For 2024-01-15T00:00:00Z, return 00:00
         if (this.getTime() === new Date('2024-01-15T00:00:00Z').getTime()) {
-          return '12:00 AM';
+          return '00:00';
         }
-        // For 2024-01-15T23:45:00Z, return 11:45 PM
+        // For 2024-01-15T23:45:00Z, return 23:45
         if (this.getTime() === new Date('2024-01-15T23:45:00Z').getTime()) {
-          return '11:45 PM';
+          return '23:45';
         }
-        // For 2024-01-15T12:00:00Z, return 12:00 PM
+        // For 2024-01-15T12:00:00Z, return 12:00
         if (this.getTime() === new Date('2024-01-15T12:00:00Z').getTime()) {
-          return '12:00 PM';
+          return '12:00';
         }
         // Default fallback
         return this.toISOString().substr(11, 5);
@@ -67,7 +67,7 @@ describe('createMessageAttachment', () => {
       author_link: 'https://source.mattermost.com/sourceteam/pl/msg123',
       author_icon: undefined,
       text: 'Test message content',
-      footer: 'SourceServer • #test-channel • 2:30 PM',
+      footer: 'SourceServer • #test-channel • 14:30',
       fallback: 'testuser in #test-channel: Test message content'
     });
   });
@@ -193,7 +193,7 @@ describe('createMessageAttachment', () => {
       create_at: new Date('2024-01-15T09:15:00Z').getTime()
     };
     let attachment = createMessageAttachment(morningMessage, sourceConfig, 'test-channel');
-    expect(attachment.footer).toContain('9:15 AM');
+    expect(attachment.footer).toContain('09:15');
 
     // Test midnight
     const midnightMessage = {
@@ -201,7 +201,7 @@ describe('createMessageAttachment', () => {
       create_at: new Date('2024-01-15T00:00:00Z').getTime()
     };
     attachment = createMessageAttachment(midnightMessage, sourceConfig, 'test-channel');
-    expect(attachment.footer).toContain('12:00 AM');
+    expect(attachment.footer).toContain('00:00');
 
     // Test noon
     const noonMessage = {
@@ -209,6 +209,6 @@ describe('createMessageAttachment', () => {
       create_at: new Date('2024-01-15T12:00:00Z').getTime()
     };
     attachment = createMessageAttachment(noonMessage, sourceConfig, 'test-channel');
-    expect(attachment.footer).toContain('12:00 PM');
+    expect(attachment.footer).toContain('12:00');
   });
 });

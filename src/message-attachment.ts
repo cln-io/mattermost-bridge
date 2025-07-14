@@ -18,9 +18,9 @@ export function createMessageAttachment(
   const timestamp = new Date(message.create_at);
   const timezone = config?.logging?.timezone || 'UTC';
   const timeString = timestamp.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
+    hour: '2-digit', 
     minute: '2-digit',
-    hour12: true,
+    hour12: false,
     timeZone: timezone
   });
   
