@@ -228,7 +228,7 @@ describe('MattermostBridge', () => {
         text: 'Test message'
       });
 
-      mockRightClient.postMessageWithAttachment.mockResolvedValue();
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'posted-message-id' });
 
       await handleMessage(mockMessage);
 
@@ -553,7 +553,7 @@ describe('MattermostBridge', () => {
         text: 'Test message'
       });
       
-      mockRightClient.postMessageWithAttachment.mockResolvedValue();
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'posted-message-id' });
       
       await handleMessage!(mockMessage);
       

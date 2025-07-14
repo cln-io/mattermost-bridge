@@ -18,6 +18,9 @@ export class MattermostBridge {
   // Cache for uploaded profile pictures to avoid re-uploading
   private profilePictureCache: Map<string, string> = new Map();
   
+  // Message ID mapping: source message ID -> target message ID
+  private messageIdMap: Map<string, string> = new Map();
+  
   // Centralized event tracking
   private leftEvents: Map<string, number> = new Map();
   private bridgeEvents: Map<string, number> = new Map();
@@ -119,6 +122,11 @@ export class MattermostBridge {
       this.leftClient.connectWebSocket(
         this.sourceChannelIds,
         (msg) => this.handleMessage(msg, msg.channel_id)
+      );
+      
+      // Set up message edit handler
+      this.leftClient.setMessageEditHandler(
+        (msg) => this.handleMessageEdit(msg, msg.channel_id)
       );
 
       console.log(`${this.LOG_PREFIX} ${emoji('✅')}Bridge is now active and listening for messages...`.trim());
@@ -267,12 +275,26 @@ export class MattermostBridge {
         this.trackBridgeEvent('message_dry_run');
       } else {
         // Post message with attachment and files
-        await this.rightClient.postMessageWithAttachment(
+        const postedMessage = await this.rightClient.postMessageWithAttachment(
           this.targetChannelId, 
           '', // Empty main message text
           attachment,
           uploadedFileIds.length > 0 ? uploadedFileIds : undefined
         );
+        
+        // Store the message ID mapping
+        if (postedMessage && postedMessage.id) {
+          this.messageIdMap.set(message.id, postedMessage.id);
+          console.log(`${this.LOG_PREFIX} ${emoji('🔗')}(${sourceChannelName})[${sourceChannelId}] Mapped source message ${message.id} to target message ${postedMessage.id}`.trim());
+          
+          // Limit map size to prevent memory issues (keep last 1000 messages)
+          if (this.messageIdMap.size > 1000) {
+            const firstKey = this.messageIdMap.keys().next().value;
+            if (firstKey) {
+              this.messageIdMap.delete(firstKey);
+            }
+          }
+        }
         
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
         console.log(`${this.LOG_PREFIX} ${emoji('✅')}(${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${this.targetChannelId}] on ${this.config.right.name}${fileInfo}`.trim());
@@ -287,6 +309,94 @@ export class MattermostBridge {
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}(${sourceChannelName})[${sourceChannelId}] Error bridging message:`.trim(), error);
+    } finally {
+      // Clear channel and user context to prevent bleeding between messages
+      this.logBuffer.clearChannelContext('current');
+      this.logBuffer.clearUserContext('current');
+    }
+  }
+
+  private async handleMessageEdit(message: MattermostMessage, sourceChannelId: string): Promise<void> {
+    try {
+      // Track the event
+      this.trackLeftEvent('post_edited');
+      
+      // Get cached channel info
+      const sourceChannelInfo = this.sourceChannelInfos.get(sourceChannelId);
+      const sourceChannelName = sourceChannelInfo?.name || sourceChannelId;
+      const targetChannelName = this.targetChannelInfo?.name || this.targetChannelId;
+      
+      // Set context for LogBuffer
+      this.logBuffer.setChannelContext('current', `${sourceChannelName}[${sourceChannelId}]`);
+      this.logBuffer.setUserContext('current', `${message.username}[${message.user_id}]`);
+      
+      console.log(`${this.LOG_PREFIX} ${emoji('✏️')}(${sourceChannelName})[${sourceChannelId}] Processing edited message ${message.id} from (${message.username})[${message.user_id}]`.trim());
+      
+      // Check if this is from a user we should ignore
+      if (this.config.dontForwardFor?.includes(message.user_id)) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🚫')}(${sourceChannelName})[${sourceChannelId}] Ignoring edited message from excluded user (${message.username})[${message.user_id}]`.trim());
+        return;
+      }
+      
+      // Look up the target message ID
+      const targetMessageId = this.messageIdMap.get(message.id);
+      
+      if (!targetMessageId) {
+        console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}(${sourceChannelName})[${sourceChannelId}] No target message found for edited source message ${message.id} - might be from before bridge started`.trim());
+        return;
+      }
+      
+      console.log(`${this.LOG_PREFIX} ${emoji('🔗')}(${sourceChannelName})[${sourceChannelId}] Found target message ${targetMessageId} for source message ${message.id}`.trim());
+      
+      // Get the original target message to preserve its structure
+      const targetPost = await this.rightClient.getPost(targetMessageId);
+      
+      if (!targetPost) {
+        console.log(`${this.LOG_PREFIX} ${emoji('❌')}(${sourceChannelName})[${sourceChannelId}] Failed to retrieve target message ${targetMessageId}`.trim());
+        return;
+      }
+      
+      // Validate that the target post can be edited
+      if (targetPost.type && targetPost.type !== '') {
+        console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}(${sourceChannelName})[${sourceChannelId}] Cannot edit system message ${targetMessageId} (type: ${targetPost.type})`.trim());
+        return;
+      }
+      
+      // Update the attachment with the new message content
+      const attachment = createMessageAttachment(
+        message,
+        this.config.left,
+        sourceChannelName,
+        targetPost.props?.attachments?.[0]?.author_icon, // Preserve existing profile picture
+        this.config.footerIcon,
+        this.config
+      );
+      
+      // Create updated post data
+      const updatedPostData = {
+        id: targetMessageId,
+        message: '', // Keep empty main message
+        props: {
+          ...targetPost.props,
+          attachments: [attachment]
+        }
+      };
+      
+      if (this.config.dryRun) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Would update message ${targetMessageId} in (${targetChannelName})[${this.targetChannelId}]`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] New text: ${attachment.text}`.trim());
+        this.trackBridgeEvent('message_edit_dry_run');
+      } else {
+        // Update the message
+        await this.rightClient.updateMessage(targetMessageId, '', updatedPostData.props);
+        
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}(${sourceChannelName})[${sourceChannelId}] Message ${targetMessageId} updated in (${targetChannelName})[${this.targetChannelId}]`.trim());
+        
+        // Track message edit bridging event
+        this.trackBridgeEvent('message_edit_bridged');
+      }
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Error bridging message edit:`.trim(), error);
     } finally {
       // Clear channel and user context to prevent bleeding between messages
       this.logBuffer.clearChannelContext('current');

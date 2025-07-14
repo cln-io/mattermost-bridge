@@ -46,6 +46,7 @@ export interface MattermostMessage {
   username?: string;
   nickname?: string; // User's display nickname
   create_at: number;
+  edit_at?: number; // Timestamp when message was edited
   file_ids?: string[]; // File attachment IDs
 }
 

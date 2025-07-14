@@ -15,6 +15,7 @@ export class MattermostClient {
   private readonly LOG_PREFIX = '[mattermost-client]';
   private monitoredChannels: Set<string> = new Set();
   private messageHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
+  private messageEditHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -312,12 +313,28 @@ export class MattermostClient {
     }
   }
 
-  async updateMessage(postId: string, message: string): Promise<void> {
+  async getPost(postId: string): Promise<any> {
     try {
-      await this.api.put(`/posts/${postId}`, {
+      const response = await this.api.get(`/posts/${postId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} Error getting post:`, error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  async updateMessage(postId: string, message: string, props?: any): Promise<void> {
+    try {
+      const updateData: any = {
         id: postId,
         message: message
-      });
+      };
+      
+      if (props) {
+        updateData.props = props;
+      }
+      
+      await this.api.put(`/posts/${postId}`, updateData);
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error updating message:`, error.response?.data || error.message);
       throw error;
@@ -431,7 +448,7 @@ export class MattermostClient {
   }
 
 
-  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[]): Promise<void> {
+  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[]): Promise<any> {
     try {
       const postData: any = {
         channel_id: channelId,
@@ -446,7 +463,8 @@ export class MattermostClient {
         postData.file_ids = fileIds;
       }
 
-      await this.api.post('/posts', postData);
+      const response = await this.api.post('/posts', postData);
+      return response.data;
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting message with attachment:`, error.response?.data || error.message);
       throw error;
@@ -690,6 +708,51 @@ export class MattermostClient {
             `${this.LOG_PREFIX} 👋 [${this.config.name}] Received hello event`
           );
 
+        } else if (eventType === 'post_edited') {
+          const post = JSON.parse(event.data.post);
+          
+          // Check if this channel is being monitored
+          if (this.monitoredChannels.has(post.channel_id)) {
+            const user = await this.getUser(post.user_id);
+            
+            // Set context for LogBuffer if available
+            if (this.logBuffer) {
+              const channelInfo = await this.getChannelById(post.channel_id);
+              const channelName = channelInfo?.name || post.channel_id;
+              this.logBuffer.setChannelContext('websocket', `${channelName}[${post.channel_id}]`);
+              this.logBuffer.setUserContext('websocket', `${user.username}[${post.user_id}]`);
+            }
+            
+            const editedMessage: MattermostMessage = {
+              id:         post.id,
+              channel_id: post.channel_id,
+              user_id:    post.user_id,
+              message:    post.message,
+              username:   user.username,
+              nickname:   user.nickname || undefined,
+              create_at:  post.create_at,
+              edit_at:    post.edit_at,
+              file_ids:   post.file_ids || []
+            };
+
+            if (this.loggingConfig.debugWebSocketEvents) {
+              console.log(
+                `${this.LOG_PREFIX} ✏️ [${this.config.name}] ` +
+                `Message ${editedMessage.id} edited by (${user.username})[${post.user_id}] in channel (${post.channel_id})`
+              );
+            }
+
+            if (this.messageEditHandler) {
+              await this.messageEditHandler(editedMessage);
+            }
+            
+            // Clear WebSocket context after processing
+            if (this.logBuffer) {
+              this.logBuffer.clearChannelContext('websocket');
+              this.logBuffer.clearUserContext('websocket');
+            }
+          }
+
         // All other event-type logs only if debug is on
         } else if (this.loggingConfig.debugWebSocketEvents) {
           switch (eventType) {
@@ -771,6 +834,10 @@ export class MattermostClient {
     });
   }
 
+  setMessageEditHandler(onMessageEdit: (msg: MattermostMessage) => Promise<void>): void {
+    this.messageEditHandler = onMessageEdit;
+  }
+
   async disconnect(): Promise<void> {
     if (this.ws) {
       this.ws.close();
@@ -778,6 +845,7 @@ export class MattermostClient {
     }
     this.monitoredChannels.clear();
     this.messageHandler = null;
+    this.messageEditHandler = null;
     
     // Clear cache to free memory
     this.channelCache.clear();
