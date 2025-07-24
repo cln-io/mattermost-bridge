@@ -16,6 +16,8 @@ export class MattermostClient {
   private monitoredChannels: Set<string> = new Set();
   private messageHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   private messageEditHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
+  private pingInterval: NodeJS.Timeout | null = null;
+  private lastPongTime: number = 0;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -629,6 +631,15 @@ export class MattermostClient {
           token: this.token
         }
       }));
+      
+      this.startHeartbeat();
+    });
+
+    this.ws.on('pong', () => {
+      this.lastPongTime = Date.now();
+      if (this.loggingConfig.debugWebSocketEvents) {
+        console.log(`${this.LOG_PREFIX} 🏓 [${this.config.name}] Pong received`);
+      }
     });
 
     this.ws.on('message', async (data: WebSocket.Data) => {
@@ -820,8 +831,9 @@ export class MattermostClient {
     this.ws.on('close', async () => {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket connection closed`);
       
-      // Clear the WebSocket reference since it's closed
+      // Clear the WebSocket reference and stop heartbeat
       this.ws = null;
+      this.stopHeartbeat();
       
       // Reconnect after 5 seconds
       setTimeout(() => {
@@ -838,7 +850,68 @@ export class MattermostClient {
     this.messageEditHandler = onMessageEdit;
   }
 
+  getWebSocketHealth(): string | null {
+    if (!this.ws) return null;
+    const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+    return states[this.ws.readyState] || `UNKNOWN(${this.ws.readyState})`;
+  }
+
+  forceReconnect(): void {
+    if (this.ws) {
+      console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Force closing WebSocket for reconnection`);
+      this.ws.close();
+      this.ws = null;
+    }
+    
+    this.stopHeartbeat();
+    
+    // Reconnect immediately with existing channels and handler
+    if (this.monitoredChannels.size > 0 && this.messageHandler) {
+      const handler = this.messageHandler;
+      setTimeout(() => {
+        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Force reconnecting WebSocket...`);
+        this.connectWebSocket(Array.from(this.monitoredChannels), handler);
+      }, 1000);
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.lastPongTime = Date.now();
+    
+    this.pingInterval = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== 1) { // 1 = OPEN
+        console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] WebSocket not open during heartbeat, stopping ping`);
+        this.stopHeartbeat();
+        return;
+      }
+
+      const now = Date.now();
+      const timeSinceLastPong = now - this.lastPongTime;
+      
+      // If we haven't received a pong in 60 seconds, consider connection stale
+      if (timeSinceLastPong > 60000) {
+        console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] No pong received for ${timeSinceLastPong}ms, forcing reconnection`);
+        this.forceReconnect();
+        return;
+      }
+
+      if (this.loggingConfig.debugWebSocketEvents) {
+        console.log(`${this.LOG_PREFIX} 🏓 [${this.config.name}] Sending ping`);
+      }
+      
+      this.ws.ping();
+    }, 30000); // Ping every 30 seconds
+  }
+
+  private stopHeartbeat(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
   async disconnect(): Promise<void> {
+    this.stopHeartbeat();
     if (this.ws) {
       this.ws.close();
       this.ws = null;

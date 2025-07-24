@@ -464,8 +464,17 @@ export class MattermostBridge {
     
     let summaryText: string;
     if (this.leftEvents.size === 0 && this.bridgeEvents.size === 0) {
-      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events - next at ${nextTimeStr}`;
+      // Check WebSocket health when no events occur
+      const wsHealth = this.leftClient.getWebSocketHealth();
+      const healthInfo = wsHealth ? ` [WS: ${wsHealth}]` : ' [WS: disconnected]';
+      summaryText = `Summary #${this.eventSummaryCount} (${duration}s): No events${healthInfo} - next at ${nextTimeStr}`;
       console.log(`${this.LOG_PREFIX} ${emoji('📊')}${summaryText}`.trim());
+      
+      // Force reconnection if WebSocket is in a bad state
+      if (!wsHealth || wsHealth === 'CLOSED' || wsHealth === 'CLOSING') {
+        console.log(`${this.LOG_PREFIX} ${emoji('🔄')}Forcing WebSocket reconnection due to bad state: ${wsHealth || 'null'}`.trim());
+        this.leftClient.forceReconnect();
+      }
     } else {
       const sections = [];
       if (leftSummary) sections.push(leftSummary);
