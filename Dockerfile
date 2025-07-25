@@ -1,5 +1,5 @@
 # Use official Node.js runtime as base image
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Install build dependencies for native modules
 RUN apk add --no-cache python3 make g++
@@ -21,7 +21,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs && \
