@@ -18,6 +18,9 @@ export class MattermostClient {
   private messageEditHandler: ((msg: MattermostMessage) => Promise<void>) | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private lastPongTime: number = 0;
+  private lastMessageTime: number = 0;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -622,6 +625,9 @@ export class MattermostClient {
     this.ws.on('open', () => {
       console.log(`${this.LOG_PREFIX} 🔌 WebSocket connected to ${this.config.name}`);
       
+      // Reset reconnect attempts on successful connection
+      this.reconnectAttempts = 0;
+      this.lastMessageTime = Date.now();
       
       // Authenticate WebSocket
       this.ws?.send(JSON.stringify({
@@ -646,6 +652,9 @@ export class MattermostClient {
       try {
         const event = JSON.parse(data.toString());
         const eventType = event.event as string;
+        
+        // Update last message time for any received message
+        this.lastMessageTime = Date.now();
 
         // Report event to bridge if callback is provided and this is the left client
         if (eventType && this.eventCallback && !this.isDestination) {
@@ -715,6 +724,7 @@ export class MattermostClient {
           }
 
         } else if (eventType === 'hello') {
+          this.lastMessageTime = Date.now();
           console.log(
             `${this.LOG_PREFIX} 👋 [${this.config.name}] Received hello event`
           );
@@ -835,14 +845,20 @@ export class MattermostClient {
       this.ws = null;
       this.stopHeartbeat();
       
-      // Reconnect after 5 seconds
-      setTimeout(() => {
-        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Attempting to reconnect WebSocket...`);
-        // Reconnect with the same channels and handler
-        if (this.monitoredChannels.size > 0 && this.messageHandler) {
-          this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler);
-        }
-      }, 5000);
+      // Check if we should attempt reconnection
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.reconnectAttempts++;
+        const backoffDelay = Math.min(5000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${backoffDelay}ms`);
+        
+        setTimeout(() => {
+          if (!this.ws && this.monitoredChannels.size > 0 && this.messageHandler) {
+            this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler);
+          }
+        }, backoffDelay);
+      } else {
+        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Max reconnection attempts reached. Manual intervention required.`);
+      }
     });
   }
 
@@ -853,7 +869,16 @@ export class MattermostClient {
   getWebSocketHealth(): string | null {
     if (!this.ws) return null;
     const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-    return states[this.ws.readyState] || `UNKNOWN(${this.ws.readyState})`;
+    const state = states[this.ws.readyState] || `UNKNOWN(${this.ws.readyState})`;
+    
+    // Add health info based on last message time
+    const now = Date.now();
+    const timeSinceLastMessage = now - this.lastMessageTime;
+    if (state === 'OPEN' && timeSinceLastMessage > 120000) { // 2 minutes
+      return `${state} (stale: ${Math.round(timeSinceLastMessage/1000)}s)`;
+    }
+    
+    return state;
   }
 
   forceReconnect(): void {
@@ -864,6 +889,9 @@ export class MattermostClient {
     }
     
     this.stopHeartbeat();
+    
+    // Reset reconnect attempts to allow force reconnection
+    this.reconnectAttempts = 0;
     
     // Reconnect immediately with existing channels and handler
     if (this.monitoredChannels.size > 0 && this.messageHandler) {
@@ -887,6 +915,7 @@ export class MattermostClient {
 
       const now = Date.now();
       const timeSinceLastPong = now - this.lastPongTime;
+      const timeSinceLastMessage = now - this.lastMessageTime;
       
       // If we haven't received a pong in 60 seconds, consider connection stale
       if (timeSinceLastPong > 60000) {
@@ -894,9 +923,17 @@ export class MattermostClient {
         this.forceReconnect();
         return;
       }
+      
+      // If we haven't received ANY message (including hello/pong) in 5 minutes, consider connection stale
+      // This catches cases where the WebSocket appears open but isn't receiving events
+      if (timeSinceLastMessage > 300000) { // 5 minutes
+        console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] No messages received for ${Math.round(timeSinceLastMessage/1000)}s, forcing reconnection`);
+        this.forceReconnect();
+        return;
+      }
 
       if (this.loggingConfig.debugWebSocketEvents) {
-        console.log(`${this.LOG_PREFIX} 🏓 [${this.config.name}] Sending ping`);
+        console.log(`${this.LOG_PREFIX} 🏓 [${this.config.name}] Sending ping (last msg: ${Math.round(timeSinceLastMessage/1000)}s ago)`);
       }
       
       this.ws.ping();
