@@ -573,7 +573,7 @@ describe('MattermostClient', () => {
       // Fast forward 5 seconds to trigger reconnection
       jest.advanceTimersByTime(5000);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Attempting to reconnect'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Reconnect attempt 1/5'));
       expect(WebSocket).toHaveBeenCalledTimes(2);
     });
 
