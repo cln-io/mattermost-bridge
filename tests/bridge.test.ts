@@ -51,7 +51,11 @@ describe('MattermostBridge', () => {
       },
       dryRun: false,
       dontForwardFor: ['@example.com'],
-      footerIcon: 'https://icon.example.com/footer.png'
+      footerIcon: 'https://icon.example.com/footer.png',
+      catchUp: {
+        enabled: false,
+        maxMessagesToRecover: 100
+      }
     };
 
     mockLeftClient = new MattermostClient(config.left, config.logging) as jest.Mocked<MattermostClient>;

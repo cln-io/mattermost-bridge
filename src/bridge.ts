@@ -4,6 +4,7 @@ import { createMessageAttachment } from './message-attachment';
 import { HeartbeatService } from './heartbeat-service';
 import { PADDED_PREFIXES, emoji } from './logger-utils';
 import { LogBuffer } from './log-buffer';
+import { MessageTracker } from './message-tracker';
 
 export class MattermostBridge {
   private leftClient: MattermostClient;
@@ -30,10 +31,19 @@ export class MattermostBridge {
   
   // Log buffer for capturing stdout
   private logBuffer: LogBuffer;
+  
+  // Message tracker for catch-up mode
+  private messageTracker: MessageTracker;
 
   constructor(private config: Config) {
     // Create log buffer first so we can pass it to clients
     this.logBuffer = new LogBuffer(5000, config.logging.timezone); // Keep up to 5000 log lines
+    
+    // Initialize message tracker
+    this.messageTracker = new MessageTracker(
+      config.catchUp.enabled,
+      config.catchUp.persistencePath
+    );
     
     this.leftClient = new MattermostClient(config.left, config.logging, false, this.trackLeftEvent.bind(this), this.logBuffer);
     this.rightClient = new MattermostClient(config.right, config.logging, true, undefined, this.logBuffer);
@@ -118,7 +128,14 @@ export class MattermostBridge {
       }
       console.log('');
 
-      // Step 5: Start listening for messages on all source channels
+      // Step 5: Catch up on missed messages if enabled
+      if (this.messageTracker.isEnabled()) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🔄')}Starting catch-up process for missed messages...`.trim());
+        await this.performCatchUp();
+        console.log('');
+      }
+
+      // Step 6: Start listening for messages on all source channels
       this.leftClient.connectWebSocket(
         this.sourceChannelIds,
         (msg) => this.handleMessage(msg, msg.channel_id)
@@ -306,6 +323,9 @@ export class MattermostBridge {
         
         // Track message bridging event on destination client for status updates
         this.trackBridgeEvent('message_bridged');
+        
+        // Track the forwarded message for catch-up functionality
+        this.messageTracker.trackForwardedMessage(sourceChannelId, message);
       }
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}(${sourceChannelName})[${sourceChannelId}] Error bridging message:`.trim(), error);
@@ -586,5 +606,76 @@ export class MattermostBridge {
     
     // Stop log buffer
     this.logBuffer.stop();
+  }
+
+  private async performCatchUp(): Promise<void> {
+    try {
+      let totalMessagesProcessed = 0;
+      
+      for (const channelId of this.sourceChannelIds) {
+        const channelInfo = this.sourceChannelInfos.get(channelId);
+        const channelName = channelInfo?.name || channelId;
+        
+        console.log(`${this.LOG_PREFIX} ${emoji('🔍')}Checking for missed messages in (${channelName})[${channelId}]...`.trim());
+        
+        // Get last tracked message for this channel
+        const lastTracked = this.messageTracker.getLastForwardedMessage(channelId);
+        
+        let sinceTimestamp: number;
+        if (lastTracked) {
+          // Add 1ms to avoid re-processing the last tracked message
+          sinceTimestamp = lastTracked.lastForwardedTimestamp + 1;
+          console.log(`${this.LOG_PREFIX} ${emoji('📅')}Last tracked message: ${lastTracked.lastForwardedMessageId} at ${new Date(sinceTimestamp - 1).toISOString()}`.trim());
+        } else {
+          // No previous tracking - only look back 24 hours to avoid overwhelming on first run
+          sinceTimestamp = Date.now() - (24 * 60 * 60 * 1000);
+          console.log(`${this.LOG_PREFIX} ${emoji('🆕')}No tracking history - scanning last 24 hours from ${new Date(sinceTimestamp).toISOString()}`.trim());
+        }
+        
+        // Get missed messages
+        const missedMessages = await this.leftClient.getMessagesSince(
+          channelId,
+          sinceTimestamp,
+          this.config.catchUp.maxMessagesToRecover
+        );
+        
+        if (missedMessages.length === 0) {
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}No missed messages in (${channelName})[${channelId}]`.trim());
+          continue;
+        }
+        
+        console.log(`${this.LOG_PREFIX} ${emoji('📨')}Processing ${missedMessages.length} missed messages from (${channelName})[${channelId}]`.trim());
+        
+        // Process messages in chronological order
+        for (const message of missedMessages) {
+          try {
+            // Use a slightly modified version of handleMessage that includes catch-up context
+            console.log(`${this.LOG_PREFIX} ${emoji('🔄')}[CATCH-UP] Processing message ${message.id} from @${message.username}`.trim());
+            await this.handleMessage(message, channelId);
+            totalMessagesProcessed++;
+            
+            // Small delay between messages to avoid overwhelming the target server
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (error) {
+            console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to process catch-up message ${message.id}:`.trim(), error);
+            // Continue processing other messages even if one fails
+          }
+        }
+        
+        // Small delay between channels
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      if (totalMessagesProcessed > 0) {
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Catch-up completed: processed ${totalMessagesProcessed} missed messages`.trim());
+        // Track the catch-up event
+        this.trackBridgeEvent('catch_up_completed');
+      } else {
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Catch-up completed: no missed messages found`.trim());
+      }
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Error during catch-up process:`.trim(), error);
+      // Don't throw - let the bridge continue even if catch-up fails
+    }
   }
 }

@@ -1009,6 +1009,59 @@ export class MattermostClient {
       // Don't throw error - reactions are not critical to bridge functionality
     }
   }
+
+  async getMessagesSince(channelId: string, sinceTimestamp: number, limit: number = 100): Promise<MattermostMessage[]> {
+    try {
+      console.log(`${this.LOG_PREFIX} ${emoji('🔍')}[${this.config.name}] Fetching messages from channel ${channelId} since ${new Date(sinceTimestamp).toISOString()}`.trim());
+      
+      // Get posts from channel since the timestamp
+      const response = await this.api.get(`/channels/${channelId}/posts`, {
+        params: {
+          since: sinceTimestamp,
+          per_page: limit
+        }
+      });
+
+      const posts = response.data.posts || {};
+      const order = response.data.order || [];
+      
+      // Convert posts to our message format
+      const messages: MattermostMessage[] = [];
+      
+      for (const postId of order) {
+        const post = posts[postId];
+        if (!post) continue;
+        
+        // Skip system messages
+        if (post.type && post.type.startsWith('system_')) continue;
+        
+        // Get user info
+        const user = await this.getUser(post.user_id);
+        
+        messages.push({
+          id: post.id,
+          channel_id: post.channel_id,
+          user_id: post.user_id,
+          message: post.message,
+          username: user.username,
+          nickname: user.nickname || undefined,
+          create_at: post.create_at,
+          edit_at: post.edit_at,
+          file_ids: post.file_ids || []
+        });
+      }
+      
+      // Sort by create_at ascending (oldest first)
+      messages.sort((a, b) => a.create_at - b.create_at);
+      
+      console.log(`${this.LOG_PREFIX} ${emoji('📨')}[${this.config.name}] Found ${messages.length} messages to catch up`.trim());
+      
+      return messages;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to get messages since ${sinceTimestamp}:`.trim(), error.response?.data || error.message);
+      return [];
+    }
+  }
   
   private sendWebSocketMessage(action: string, data: any): void {
     if (!this.ws || this.ws.readyState !== 1) {

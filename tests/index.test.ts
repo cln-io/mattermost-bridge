@@ -50,7 +50,11 @@ describe('index', () => {
         timezone: 'UTC'
       },
       dryRun: false,
-      dontForwardFor: []
+      dontForwardFor: [],
+      catchUp: {
+        enabled: false,
+        maxMessagesToRecover: 100
+      }
     });
 
     processExitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);

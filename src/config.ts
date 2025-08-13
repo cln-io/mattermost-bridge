@@ -114,6 +114,19 @@ export function loadConfig(): Config {
   console.log(`${LOG_PREFIX} ${emoji('👤')}Author names show: Nickname - @username (if nickname set)`.trim());
   console.log(`${LOG_PREFIX} ${emoji('🎨')}Format: [Profile Picture] AuthorName | Message | Footer: ServerName • #channel • Time`.trim());
 
+  // Catch-up mode configuration
+  const catchUpEnabled = process.env.ENABLE_CATCH_UP === 'true';
+  const catchUpPath = process.env.CATCH_UP_PERSISTENCE_PATH || '/data/tracking/message-state.json';
+  const maxMessagesToRecover = parseInt(process.env.MAX_MESSAGES_TO_RECOVER || '100', 10);
+
+  if (catchUpEnabled) {
+    console.log(`${LOG_PREFIX} ${emoji('🔄')}Catch-up mode ENABLED - will recover missed messages on startup`.trim());
+    console.log(`${LOG_PREFIX} ${emoji('📂')}Persistence path: ${catchUpPath}`.trim());
+    console.log(`${LOG_PREFIX} ${emoji('📊')}Max messages to recover per channel: ${maxMessagesToRecover}`.trim());
+  } else {
+    console.log(`${LOG_PREFIX} ${emoji('🔕')}Catch-up mode disabled (ENABLE_CATCH_UP not set to 'true')`.trim());
+  }
+
   // Parse source channel ID(s) - can be a single ID or comma-separated list
   let sourceChannelId: string | string[];
   const sourceChannelIdRaw = process.env.SOURCE_CHANNEL_ID!;
@@ -163,6 +176,11 @@ export function loadConfig(): Config {
     dryRun: dryRun,
     dontForwardFor: dontForwardFor,
     footerIcon: footerIcon || undefined,
-    leftMessageEmoji: leftMessageEmoji || undefined
+    leftMessageEmoji: leftMessageEmoji || undefined,
+    catchUp: {
+      enabled: catchUpEnabled,
+      persistencePath: catchUpPath,
+      maxMessagesToRecover: maxMessagesToRecover
+    }
   };
 }

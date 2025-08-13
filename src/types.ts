@@ -36,6 +36,13 @@ export interface Config {
   dontForwardFor: string[]; // List of email domains to exclude
   footerIcon?: string; // Optional footer icon URL
   leftMessageEmoji?: string; // Emoji to add to original message after bridging
+  catchUp: CatchUpConfig; // Message catch-up configuration
+}
+
+export interface CatchUpConfig {
+  enabled: boolean;
+  persistencePath?: string;
+  maxMessagesToRecover: number;
 }
 
 export interface MattermostMessage {
