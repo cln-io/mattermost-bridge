@@ -21,6 +21,8 @@ export class MattermostClient {
   private lastMessageTime: number = 0;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
+  private wsSequence: number = 1;
+  private lastStatusCheck: number = 0;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -630,13 +632,10 @@ export class MattermostClient {
       this.lastMessageTime = Date.now();
       
       // Authenticate WebSocket
-      this.ws?.send(JSON.stringify({
-        seq: 1,
-        action: 'authentication_challenge',
-        data: {
-          token: this.token
-        }
-      }));
+      this.wsSequence = 1;
+      this.sendWebSocketMessage('authentication_challenge', {
+        token: this.token
+      });
       
       this.startHeartbeat();
     });
@@ -728,6 +727,14 @@ export class MattermostClient {
           console.log(
             `${this.LOG_PREFIX} 👋 [${this.config.name}] Received hello event`
           );
+        } else if (eventType === 'status_change' || eventType === 'statuses') {
+          // Response to get_statuses - indicates connection is healthy
+          this.lastMessageTime = Date.now();
+          if (this.loggingConfig.debugWebSocketEvents) {
+            console.log(
+              `${this.LOG_PREFIX} ✅ [${this.config.name}] Status response received - connection healthy`
+            );
+          }
 
         } else if (eventType === 'post_edited') {
           const post = JSON.parse(event.data.post);
@@ -905,6 +912,7 @@ export class MattermostClient {
 
   private startHeartbeat(): void {
     this.lastPongTime = Date.now();
+    this.lastStatusCheck = Date.now();
     
     this.pingInterval = setInterval(() => {
       if (!this.ws || this.ws.readyState !== 1) { // 1 = OPEN
@@ -916,18 +924,30 @@ export class MattermostClient {
       const now = Date.now();
       const timeSinceLastPong = now - this.lastPongTime;
       const timeSinceLastMessage = now - this.lastMessageTime;
+      const timeSinceLastStatusCheck = now - this.lastStatusCheck;
       
-      // If we haven't received a pong in 60 seconds, consider connection stale
-      if (timeSinceLastPong > 60000) {
+      // If we haven't received a pong in 65 seconds (60 + 5 buffer like Go client), consider connection stale
+      if (timeSinceLastPong > 65000) {
         console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] No pong received for ${timeSinceLastPong}ms, forcing reconnection`);
         this.forceReconnect();
         return;
       }
       
-      // If we haven't received ANY message (including hello/pong) in 5 minutes, consider connection stale
-      // This catches cases where the WebSocket appears open but isn't receiving events
-      if (timeSinceLastMessage > 300000) { // 5 minutes
-        console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] No messages received for ${Math.round(timeSinceLastMessage/1000)}s, forcing reconnection`);
+      // Send get_statuses every 30 seconds as an active health check
+      // This matches Mattermost's approach rather than passive timeout
+      if (timeSinceLastStatusCheck > 30000) {
+        this.sendWebSocketMessage('get_statuses', null);
+        this.lastStatusCheck = Date.now();
+        
+        if (this.loggingConfig.debugWebSocketEvents) {
+          console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Sent get_statuses for health check`);
+        }
+      }
+      
+      // If we haven't received ANY message in 90 seconds after status check, force reconnect
+      // This is more aggressive than before but matches the Go client's approach
+      if (timeSinceLastMessage > 90000) {
+        console.log(`${this.LOG_PREFIX} 💔 [${this.config.name}] No messages for ${Math.round(timeSinceLastMessage/1000)}s after status check, forcing reconnection`);
         this.forceReconnect();
         return;
       }
@@ -937,7 +957,7 @@ export class MattermostClient {
       }
       
       this.ws.ping();
-    }, 30000); // Ping every 30 seconds
+    }, 30000); // Check every 30 seconds
   }
 
   private stopHeartbeat(): void {
@@ -988,6 +1008,21 @@ export class MattermostClient {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to add reaction :${emojiName}: to message ${messageId}:`.trim(), error.response?.data || error.message);
       // Don't throw error - reactions are not critical to bridge functionality
     }
+  }
+  
+  private sendWebSocketMessage(action: string, data: any): void {
+    if (!this.ws || this.ws.readyState !== 1) {
+      console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Cannot send WebSocket message - not connected`);
+      return;
+    }
+    
+    const message = {
+      seq: this.wsSequence++,
+      action: action,
+      data: data
+    };
+    
+    this.ws.send(JSON.stringify(message));
   }
 
 }
