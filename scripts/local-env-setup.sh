@@ -399,7 +399,6 @@ MATTERMOST_RIGHT_TEAM=$RIGHT_TEAM
 # Bridge Configuration
 SOURCE_CHANNEL_ID=$LEFT_CHANNEL_ID
 TARGET_CHANNEL_ID=$RIGHT_CHANNEL_ID
-MESSAGE_TEMPLATE=**[{{source_name}}] {{username}}**: {{message}}
 
 # Optional: Heartbeat monitoring (disabled by default)
 #HEARTBEAT_URL=https://your-heartbeat-monitor.com/ping/your-monitor-id
@@ -412,6 +411,11 @@ EVENT_SUMMARY_INTERVAL_MINUTES=5
 
 # Dry run mode (set to true to test without posting messages)
 DRY_RUN=false
+
+# Message Catch-Up (disabled by default for testing)
+ENABLE_CATCH_UP=false
+#CATCH_UP_PERSISTENCE_PATH=/data/tracking/message-state.json
+#MAX_MESSAGES_TO_RECOVER=100
 EOF
 
 echo -e "${GREEN}✅ Created .env.local file${NC}"

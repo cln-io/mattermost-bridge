@@ -46,6 +46,7 @@ The bridge listens for messages on a source channel and forwards them to a targe
 - **MFA/2FA support** - Works with multi-factor authentication enabled accounts
 - **Email domain filtering** - Exclude messages from specific email domains
 - **Minimal attachments** - Clean, baby blue message formatting with profile pictures
+- **Message catch-up** - Automatically recover missed messages when bridge restarts (with Docker volume persistence)
 
 ## Quick Start
 
@@ -120,6 +121,10 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | **Monitoring** |
 | `HEARTBEAT_URL` | URL for uptime monitoring | ❌ | - | `https://heartbeat.uptimerobot.com/...` |
 | `HEARTBEAT_INTERVAL_MINUTES` | How often to send heartbeat pings | ❌ | `15` | `5` |
+| **Message Catch-Up** |
+| `ENABLE_CATCH_UP` | Enable catch-up mode to recover missed messages when bridge was offline | ❌ | `false` | `true` |
+| `CATCH_UP_PERSISTENCE_PATH` | Path to store message tracking state (Docker volume recommended) | ❌ | `/data/tracking/message-state.json` | `/custom/path/state.json` |
+| `MAX_MESSAGES_TO_RECOVER` | Maximum number of messages to recover per channel on startup | ❌ | `100` | `50`, `200` |
 | **Appearance** |
 | `FOOTER_ICON` | Custom icon URL for message footers | ❌ | - | `https://example.com/icon.png` |
 | `LEFT_MESSAGE_EMOJI` | Emoji to add to original message after bridging | ❌ | - | `envelope_with_arrow`, `white_check_mark` |
@@ -142,6 +147,41 @@ docker-compose up -d
 ```
 
 Docker images support both AMD64 and ARM64 architectures.
+
+### Docker with Message Catch-Up
+
+To enable message catch-up functionality, mount a volume for persistence:
+
+```bash
+# Create a named volume
+docker volume create mattermost-bridge-data
+
+# Run with catch-up enabled
+docker run --env-file .env \
+  -e ENABLE_CATCH_UP=true \
+  -v mattermost-bridge-data:/data \
+  clnio/mattermost-bridge:latest
+```
+
+Or in docker-compose.yml:
+
+```yaml
+version: '3.8'
+services:
+  mattermost-bridge:
+    image: clnio/mattermost-bridge:latest
+    env_file: .env
+    environment:
+      - ENABLE_CATCH_UP=true
+    volumes:
+      - mattermost-bridge-data:/data
+    restart: unless-stopped
+
+volumes:
+  mattermost-bridge-data:
+```
+
+The bridge will automatically track forwarded messages and catch up on missed messages when restarted.
 
 ## Local Development
 
