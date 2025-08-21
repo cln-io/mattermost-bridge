@@ -221,21 +221,12 @@ describe('index', () => {
     const error = new Error('Startup failed');
     mockBridge.start.mockRejectedValue(error);
 
-    // Call main but don't await it since process.exit will terminate
-    const mainPromise = main();
-    
-    // Wait for the async operations to complete - use longer timeout
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Await the main function and expect it to handle the error
+    await main();
 
+    // Verify error handling occurred
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Application failed to start'), error);
     expect(mockBridge.stop).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);
-    
-    // Clean up the promise - handle both resolve and reject
-    try {
-      await mainPromise;
-    } catch (e) {
-      // Expected to throw since we're mocking a startup failure
-    }
   });
 });

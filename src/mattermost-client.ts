@@ -980,8 +980,8 @@ export class MattermostClient {
     if (this.monitoredChannels.size > 0 && this.messageHandler) {
       console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Starting forced reconnection in 1 second...`);
       setTimeout(() => {
-        if (!this.ws) { // Double-check we didn't reconnect already
-          this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler!);
+        if (!this.ws && this.messageHandler) { // Double-check we didn't reconnect already and handler exists
+          this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler);
         }
       }, 1000);
     }
