@@ -568,12 +568,12 @@ describe('MattermostClient', () => {
       // Trigger the close handler
       await wsCloseHandler();
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('connection closed'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('WebSocket CLOSED'));
 
       // Fast forward 5 seconds to trigger reconnection
       jest.advanceTimersByTime(5000);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Reconnect attempt 1/5'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Will reconnect (attempt 1/5)'));
       expect(WebSocket).toHaveBeenCalledTimes(2);
     });
 
