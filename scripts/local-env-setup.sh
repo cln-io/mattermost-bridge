@@ -400,22 +400,66 @@ MATTERMOST_RIGHT_TEAM=$RIGHT_TEAM
 SOURCE_CHANNEL_ID=$LEFT_CHANNEL_ID
 TARGET_CHANNEL_ID=$RIGHT_CHANNEL_ID
 
-# Optional: Heartbeat monitoring (disabled by default)
-#HEARTBEAT_URL=https://your-heartbeat-monitor.com/ping/your-monitor-id
-#HEARTBEAT_INTERVAL_MINUTES=15
-
-# Logging
+# ===========================================
+# Logging & Display (Optional)
+# ===========================================
+# Logging verbosity level (debug, info, warn, error)
 LOG_LEVEL=info
+
+# Enable detailed WebSocket event logging
 DEBUG_WEBSOCKET_EVENTS=false
+
+# How often to log event summaries (minutes)
 EVENT_SUMMARY_INTERVAL_MINUTES=5
 
-# Dry run mode (set to true to test without posting messages)
+# What to post to #mattermost-bridge-status channel
+# Options: none (disabled), summary (event summaries only), logs (combined summaries + last 30 log lines, updates single message)
+STATS_CHANNEL_UPDATES=none
+
+# Disable emojis in console output
+DISABLE_EMOJI=false
+
+# Timezone for timestamp formatting (e.g., 'Europe/Brussels', 'America/New_York', 'UTC')
+TIMEZONE=UTC
+
+# ===========================================
+# Message Filtering (Optional)
+# ===========================================
+# Comma-separated email domains to exclude from bridging (disabled for testing)
+#DONT_FORWARD_FOR=@bot-accounts.com,@internal.example.com
+
+# Log messages without posting to target (for testing)
 DRY_RUN=false
 
-# Message Catch-Up (disabled by default for testing)
+# ===========================================
+# Message Customization (Optional)
+# ===========================================
+# Emoji to react with on source messages after bridging (without colons) (disabled for testing)
+#LEFT_MESSAGE_EMOJI=white_check_mark
+
+# Footer icon URL for message attachments (disabled for testing)
+#FOOTER_ICON=https://example.com/icon.png
+
+# ===========================================
+# Monitoring (Optional)
+# ===========================================
+# External heartbeat monitoring URL (e.g., UptimeRobot) (disabled for testing)
+#HEARTBEAT_URL=https://heartbeat.uptimerobot.com/your-monitor-id
+
+# How often to send heartbeats (minutes) (disabled for testing)
+#HEARTBEAT_INTERVAL_MINUTES=15
+
+# ===========================================
+# Message Catch-Up (Optional)
+# ===========================================
+# Enable catch-up mode to recover missed messages when bridge was offline
 ENABLE_CATCH_UP=false
-#CATCH_UP_PERSISTENCE_PATH=/data/tracking/message-state.json
-#MAX_MESSAGES_TO_RECOVER=100
+
+# Path to store message tracking state (Docker volume recommended)
+CATCH_UP_PERSISTENCE_PATH=/data/tracking/message-state.json
+
+# Maximum number of messages to recover per channel on startup
+MAX_MESSAGES_TO_RECOVER=100
 EOF
 
 echo -e "${GREEN}✅ Created .env.local file${NC}"

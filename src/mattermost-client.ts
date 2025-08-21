@@ -23,6 +23,9 @@ export class MattermostClient {
   private maxReconnectAttempts: number = 5;
   private wsSequence: number = 1;
   private lastStatusCheck: number = 0;
+  private processingMessages: Set<string> = new Set();
+  private wsConnectionId: string = '';
+  private wsConnectionCount: number = 0;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -606,10 +609,20 @@ export class MattermostClient {
     this.monitoredChannels = new Set(channelsArray);
     this.messageHandler = onMessage;
     
-    // If WebSocket is already connected, just update the monitored channels
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Updated monitored channels: ${channelsArray.join(', ')}`);
-      return;
+    // IMPORTANT: Only one WebSocket connection should exist
+    if (this.ws) {
+      const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+      const currentState = states[this.ws.readyState] || `UNKNOWN(${this.ws.readyState})`;
+      
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        console.log(`${this.LOG_PREFIX} ✅ [${this.config.name}] WebSocket already ${currentState}, not creating duplicate connection`);
+        return;
+      }
+      
+      // Only create new connection if old one is truly dead
+      console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Old WebSocket is ${currentState}, cleaning up before new connection`);
+      this.ws.removeAllListeners();
+      this.ws = null;
     }
     // Use normalized server URL for WebSocket connection
     const normalizedServer = this.normalizeServerUrl(this.config.server);
@@ -622,10 +635,16 @@ export class MattermostClient {
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Monitoring channels: ${channelsArray.join(', ')}`);
     }
     
+    // Generate unique connection ID for debugging
+    this.wsConnectionCount++;
+    this.wsConnectionId = `${Date.now()}-${this.wsConnectionCount}`;
+    
+    console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Creating WebSocket connection #${this.wsConnectionCount} (ID: ${this.wsConnectionId})`);
+    
     this.ws = new WebSocket(wsUrl);
     
     this.ws.on('open', () => {
-      console.log(`${this.LOG_PREFIX} 🔌 WebSocket connected to ${this.config.name}`);
+      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket OPENED (Connection ID: ${this.wsConnectionId})`);
       
       // Reset reconnect attempts on successful connection
       this.reconnectAttempts = 0;
@@ -673,6 +692,28 @@ export class MattermostClient {
         if (eventType === 'posted') {
           const post = JSON.parse(event.data.post);
           
+          // Log detailed info about received message
+          const receivedAt = Date.now();
+          console.log(
+            `${this.LOG_PREFIX} 📥 [${this.config.name}] ` +
+            `Received 'posted' event - Message ID: ${post.id}, ` +
+            `Connection: ${this.wsConnectionId}, ` +
+            `Time: ${receivedAt}`
+          );
+          
+          // Check if we're already processing this message (prevents concurrent duplicates)
+          if (this.processingMessages.has(post.id)) {
+            console.log(
+              `${this.LOG_PREFIX} 🚫 [${this.config.name}] ` +
+              `DUPLICATE DETECTED! Message ${post.id} already being processed. ` +
+              `Connection: ${this.wsConnectionId}`
+            );
+            return;
+          }
+          
+          // Mark as processing to prevent concurrent handling
+          this.processingMessages.add(post.id);
+          
           // Check if this channel is being monitored
           if (!this.monitoredChannels.has(post.channel_id)) {
             if (this.loggingConfig.debugWebSocketEvents) {
@@ -716,6 +757,9 @@ export class MattermostClient {
             await this.messageHandler(message);
           }
           
+          // Remove from processing set after handler completes
+          this.processingMessages.delete(post.id);
+          
           // Clear WebSocket context after processing
           if (this.logBuffer) {
             this.logBuffer.clearChannelContext('websocket');
@@ -738,6 +782,21 @@ export class MattermostClient {
 
         } else if (eventType === 'post_edited') {
           const post = JSON.parse(event.data.post);
+          
+          // Check for concurrent duplicate edits
+          const editKey = `edit_${post.id}_${post.edit_at}`;
+          if (this.processingMessages.has(editKey)) {
+            if (this.loggingConfig.debugWebSocketEvents) {
+              console.log(
+                `${this.LOG_PREFIX} 🚫 [${this.config.name}] ` +
+                `Already processing edit for message ${post.id}`
+              );
+            }
+            return;
+          }
+          
+          // Mark as processing
+          this.processingMessages.add(editKey);
           
           // Check if this channel is being monitored
           if (this.monitoredChannels.has(post.channel_id)) {
@@ -773,6 +832,9 @@ export class MattermostClient {
             if (this.messageEditHandler) {
               await this.messageEditHandler(editedMessage);
             }
+            
+            // Remove from processing set after handler completes
+            this.processingMessages.delete(editKey);
             
             // Clear WebSocket context after processing
             if (this.logBuffer) {
@@ -846,9 +908,10 @@ export class MattermostClient {
     });
 
     this.ws.on('close', async () => {
-      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket connection closed`);
+      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket CLOSED (Connection ID: ${this.wsConnectionId})`);
       
       // Clear the WebSocket reference and stop heartbeat
+      const oldWs = this.ws;
       this.ws = null;
       this.stopHeartbeat();
       
@@ -856,11 +919,15 @@ export class MattermostClient {
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
         const backoffDelay = Math.min(5000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
-        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${backoffDelay}ms`);
+        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Will reconnect (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${backoffDelay}ms`);
         
         setTimeout(() => {
+          // Double-check we haven't already reconnected
           if (!this.ws && this.monitoredChannels.size > 0 && this.messageHandler) {
+            console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Initiating reconnection...`);
             this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler);
+          } else if (this.ws) {
+            console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Skipping reconnect - WebSocket already exists`);
           }
         }, backoffDelay);
       } else {
@@ -889,8 +956,17 @@ export class MattermostClient {
   }
 
   forceReconnect(): void {
+    console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] FORCE RECONNECT requested (Current connection: ${this.wsConnectionId})`);
+    
+    // Only force reconnect if we're not already connecting
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Already connecting, skipping force reconnect`);
+      return;
+    }
+    
     if (this.ws) {
-      console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Force closing WebSocket for reconnection`);
+      console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Closing existing WebSocket (ID: ${this.wsConnectionId})`);
+      this.ws.removeAllListeners();
       this.ws.close();
       this.ws = null;
     }
@@ -900,12 +976,13 @@ export class MattermostClient {
     // Reset reconnect attempts to allow force reconnection
     this.reconnectAttempts = 0;
     
-    // Reconnect immediately with existing channels and handler
+    // Reconnect with existing channels and handler
     if (this.monitoredChannels.size > 0 && this.messageHandler) {
-      const handler = this.messageHandler;
+      console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Starting forced reconnection in 1 second...`);
       setTimeout(() => {
-        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Force reconnecting WebSocket...`);
-        this.connectWebSocket(Array.from(this.monitoredChannels), handler);
+        if (!this.ws) { // Double-check we didn't reconnect already
+          this.connectWebSocket(Array.from(this.monitoredChannels), this.messageHandler!);
+        }
       }, 1000);
     }
   }
@@ -977,8 +1054,9 @@ export class MattermostClient {
     this.messageHandler = null;
     this.messageEditHandler = null;
     
-    // Clear cache to free memory
+    // Clear caches to free memory
     this.channelCache.clear();
+    this.processingMessages.clear();
   }
 
   // Methods to access cached information without API calls
