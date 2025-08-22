@@ -20,6 +20,7 @@ export class MessageTracker {
   private dataPath: string;
   private data: TrackingData = { version: 1, channels: {} };
   private enabled: boolean;
+  private persistenceEnabled: boolean = true;
 
   constructor(enabled: boolean = false, persistencePath?: string) {
     this.enabled = enabled;
@@ -42,8 +43,22 @@ export class MessageTracker {
       // Ensure directory exists
       const dir = path.dirname(this.dataPath);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log(`${this.LOG_PREFIX} ${emoji('📁')}Created tracking directory: ${dir}`.trim());
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+          console.log(`${this.LOG_PREFIX} ${emoji('📁')}Created tracking directory: ${dir}`.trim());
+        } catch (mkdirError: any) {
+          // If we can't create the directory (permission denied), switch to in-memory only
+          if (mkdirError.code === 'EACCES' || mkdirError.code === 'EPERM') {
+            console.warn(`${this.LOG_PREFIX} ${emoji('⚠️')}Cannot create directory ${dir} (permission denied)`.trim());
+            console.warn(`${this.LOG_PREFIX} ${emoji('💭')}Running in MEMORY-ONLY mode - tracking state will be lost on restart`.trim());
+            console.warn(`${this.LOG_PREFIX} ${emoji('🐳')}To enable persistence, ensure the Docker volume is properly mounted and writable`.trim());
+            this.persistenceEnabled = false;
+            this.data = { version: 1, channels: {} };
+            return;
+          } else {
+            throw mkdirError;
+          }
+        }
       }
 
       // Load existing data or create new
@@ -55,21 +70,37 @@ export class MessageTracker {
       } else {
         this.data = { version: 1, channels: {} };
         this.save();
-        console.log(`${this.LOG_PREFIX} ${emoji('🆕')}Initialized new tracking file`.trim());
+        if (this.persistenceEnabled) {
+          console.log(`${this.LOG_PREFIX} ${emoji('🆕')}Initialized new tracking file at ${this.dataPath}`.trim());
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to load tracking data:`.trim(), error);
+      
+      // If it's a permission error, handle it gracefully
+      if (error.code === 'EACCES' || error.code === 'EPERM') {
+        console.warn(`${this.LOG_PREFIX} ${emoji('💭')}Running in MEMORY-ONLY mode - tracking state will be lost on restart`.trim());
+        console.warn(`${this.LOG_PREFIX} ${emoji('🐳')}To enable persistence, ensure the Docker volume is properly mounted and writable`.trim());
+        this.persistenceEnabled = false;
+      }
+      
       this.data = { version: 1, channels: {} };
     }
   }
 
   private save(): void {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.persistenceEnabled) return;
     
     try {
       fs.writeFileSync(this.dataPath, JSON.stringify(this.data, null, 2));
-    } catch (error) {
+    } catch (error: any) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to save tracking data:`.trim(), error);
+      
+      // If it's a permission error, disable persistence for future saves
+      if (error.code === 'EACCES' || error.code === 'EPERM') {
+        console.warn(`${this.LOG_PREFIX} ${emoji('⚠️')}Disabling persistence due to permission error`.trim());
+        this.persistenceEnabled = false;
+      }
     }
   }
 
