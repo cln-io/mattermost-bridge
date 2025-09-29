@@ -413,7 +413,14 @@ describe('MattermostClient', () => {
     it('should connect WebSocket and authenticate', () => {
       client.connectWebSocket('channel123', onMessage);
 
-      expect(WebSocket).toHaveBeenCalledWith('wss://test.mattermost.com/api/v4/websocket');
+      // Expect browser-like options passed to WebSocket constructor
+      expect(WebSocket).toHaveBeenCalledWith(
+        'wss://test.mattermost.com/api/v4/websocket',
+        undefined,
+        expect.objectContaining({
+          headers: expect.any(Object)
+        })
+      );
 
       // Trigger open event
       wsOpenHandler();
@@ -563,6 +570,7 @@ describe('MattermostClient', () => {
 
     it('should reconnect on close', async () => {
       const consoleSpy = jest.spyOn(console, 'log');
+      const randomSpy = jest.spyOn(global.Math, 'random').mockReturnValue(0);
       client.connectWebSocket('channel123', onMessage);
 
       // Trigger the close handler
@@ -570,11 +578,13 @@ describe('MattermostClient', () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('WebSocket CLOSED'));
 
-      // Fast forward 5 seconds to trigger reconnection
+      // Fast forward 5 seconds (no jitter due to mocked Math.random)
       jest.advanceTimersByTime(5000);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Will reconnect (attempt 1/5)'));
+      // We use unlimited reconnects now; label is ∞
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Will reconnect (attempt 1/'));
       expect(WebSocket).toHaveBeenCalledTimes(2);
+      randomSpy.mockRestore();
     });
 
 
