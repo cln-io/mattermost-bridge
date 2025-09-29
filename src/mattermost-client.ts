@@ -26,6 +26,8 @@ export class MattermostClient {
   private maxReconnectAttempts: number = 0;
   private wsSequence: number = 1;
   private lastStatusCheck: number = 0;
+  private lastAuthCheck: number = 0;
+  private sessionCheckInProgress: boolean = false;
   private processingMessages: Set<string> = new Set();
   private wsConnectionId: string = '';
   private wsConnectionCount: number = 0;
@@ -981,6 +983,9 @@ export class MattermostClient {
 
       const reasonText = (() => { try { return reason?.toString(); } catch { return ''; } })();
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket CLOSED (Connection ID: ${this.wsConnectionId}) code=${code} reason=${reasonText}`);
+
+      // Check if the session is still valid; if not, re-login before reconnecting
+      void this.checkSession('ws-close');
       
       // Clear the WebSocket reference and stop heartbeat
       this.ws = null;
@@ -1088,6 +1093,7 @@ export class MattermostClient {
   private startHeartbeat(): void {
     this.lastPongTime = Date.now();
     this.lastStatusCheck = Date.now();
+    this.lastAuthCheck = Date.now();
     
     this.pingInterval = setInterval(() => {
       if (!this.ws || this.ws.readyState !== 1) { // 1 = OPEN
@@ -1118,6 +1124,11 @@ export class MattermostClient {
           console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Sent get_statuses for health check`);
         }
       }
+
+      // Every ~3 minutes, verify the REST session is still valid.
+      if (now - this.lastAuthCheck > 180000) {
+        void this.checkSession('heartbeat');
+      }
       
       // If we haven't received ANY message in 90 seconds after status check, force reconnect
       // This is more aggressive than before but matches the Go client's approach
@@ -1139,6 +1150,34 @@ export class MattermostClient {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
+    }
+  }
+
+  // Lightweight session checker: verifies REST auth; on 401/403, re-login.
+  private async checkSession(trigger: string): Promise<void> {
+    const now = Date.now();
+    // Throttle session checks to avoid bursts
+    if (this.sessionCheckInProgress || now - this.lastAuthCheck < 30000) {
+      return;
+    }
+    this.sessionCheckInProgress = true;
+    try {
+      await this.api.get('/users/me');
+      this.lastAuthCheck = now;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        console.warn(`${this.LOG_PREFIX} 🔐 [${this.config.name}] Session appears expired (trigger=${trigger}, status=${status}). Re-authenticating...`);
+        try {
+          await this.login();
+          // Refresh WS auth by reconnecting with the new token
+          this.forceReconnect();
+        } catch (loginErr) {
+          console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Re-authentication failed:`, loginErr);
+        }
+      }
+    } finally {
+      this.sessionCheckInProgress = false;
     }
   }
 
