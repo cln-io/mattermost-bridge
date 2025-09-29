@@ -26,6 +26,9 @@ export class MattermostClient {
   private processingMessages: Set<string> = new Set();
   private wsConnectionId: string = '';
   private wsConnectionCount: number = 0;
+  // Manage reconnection and intentional closes to avoid loops
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private intentionallyClosing: boolean = false;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -642,14 +645,30 @@ export class MattermostClient {
     console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Creating WebSocket connection #${this.wsConnectionCount} (ID: ${this.wsConnectionId})`);
     
     this.ws = new WebSocket(wsUrl);
-    
+
+    // Capture this connection's ID to detect stale events from prior sockets
+    const connectionIdForHandlers = this.wsConnectionId;
+
     this.ws.on('open', () => {
+      // Ignore opens from stale sockets (shouldn't normally happen but safe-guard anyway)
+      if (connectionIdForHandlers !== this.wsConnectionId) {
+        if (this.loggingConfig.debugWebSocketEvents) {
+          console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Ignoring OPEN from stale socket (ID: ${connectionIdForHandlers})`);
+        }
+        return;
+      }
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket OPENED (Connection ID: ${this.wsConnectionId})`);
       
       // Reset reconnect attempts on successful connection
       this.reconnectAttempts = 0;
       this.lastMessageTime = Date.now();
       
+      // Cancel any pending reconnect from previous close
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+
       // Authenticate WebSocket
       this.wsSequence = 1;
       this.sendWebSocketMessage('authentication_challenge', {
@@ -660,6 +679,7 @@ export class MattermostClient {
     });
 
     this.ws.on('pong', () => {
+      if (connectionIdForHandlers !== this.wsConnectionId) return; // stale
       this.lastPongTime = Date.now();
       if (this.loggingConfig.debugWebSocketEvents) {
         console.log(`${this.LOG_PREFIX} 🏓 [${this.config.name}] Pong received`);
@@ -667,6 +687,7 @@ export class MattermostClient {
     });
 
     this.ws.on('message', async (data: WebSocket.Data) => {
+      if (connectionIdForHandlers !== this.wsConnectionId) return; // stale
       try {
         const event = JSON.parse(data.toString());
         const eventType = event.event as string;
@@ -885,6 +906,7 @@ export class MattermostClient {
     });
 
     this.ws.on('error', (error) => {
+      if (connectionIdForHandlers !== this.wsConnectionId) return; // stale
       console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] WebSocket error:`, error);
       // Always dump full error information, regardless of debug mode
       console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] Full WebSocket error details:`, {
@@ -908,20 +930,47 @@ export class MattermostClient {
     });
 
     this.ws.on('close', async () => {
+      // Ignore closes from stale sockets to avoid spurious reconnects
+      if (connectionIdForHandlers !== this.wsConnectionId) {
+        if (this.loggingConfig.debugWebSocketEvents) {
+          console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Ignoring CLOSE from stale socket (ID: ${connectionIdForHandlers})`);
+        }
+        return;
+      }
+
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket CLOSED (Connection ID: ${this.wsConnectionId})`);
       
       // Clear the WebSocket reference and stop heartbeat
-      const oldWs = this.ws;
       this.ws = null;
       this.stopHeartbeat();
-      
+
+      // If we intentionally closed (disconnect/forceReconnect), do not schedule reconnect
+      if (this.intentionallyClosing) {
+        if (this.loggingConfig.debugWebSocketEvents) {
+          console.log(`${this.LOG_PREFIX} 🔕 [${this.config.name}] Close was intentional; skipping auto-reconnect`);
+        }
+        this.intentionallyClosing = false; // reset flag
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        return;
+      }
+
       // Check if we should attempt reconnection
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
-        const backoffDelay = Math.min(5000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+        const base = 5000 * Math.pow(1.5, this.reconnectAttempts - 1);
+        const jitter = Math.floor(Math.random() * 1000); // add small jitter to avoid thundering herd
+        const backoffDelay = Math.min(base + jitter, 30000);
         console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Will reconnect (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${backoffDelay}ms`);
-        
-        setTimeout(() => {
+
+        // Cancel any existing scheduled reconnect and schedule a new one
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+        }
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null; // clear reference when it fires
           // Double-check we haven't already reconnected
           if (!this.ws && this.monitoredChannels.size > 0 && this.messageHandler) {
             console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Initiating reconnection...`);
@@ -966,12 +1015,17 @@ export class MattermostClient {
     
     if (this.ws) {
       console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Closing existing WebSocket (ID: ${this.wsConnectionId})`);
+      this.intentionallyClosing = true;
       this.ws.removeAllListeners();
       this.ws.close();
       this.ws = null;
     }
     
     this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     
     // Reset reconnect attempts to allow force reconnection
     this.reconnectAttempts = 0;
@@ -1046,7 +1100,12 @@ export class MattermostClient {
 
   async disconnect(): Promise<void> {
     this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
+      this.intentionallyClosing = true;
       this.ws.close();
       this.ws = null;
     }
