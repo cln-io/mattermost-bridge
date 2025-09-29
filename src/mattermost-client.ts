@@ -1091,17 +1091,67 @@ export class MattermostClient {
   async getMessagesSince(channelId: string, sinceTimestamp: number, limit: number = 100): Promise<MattermostMessage[]> {
     try {
       console.log(`${this.LOG_PREFIX} ${emoji('🔍')}[${this.config.name}] Fetching messages from channel ${channelId} since ${new Date(sinceTimestamp).toISOString()}`.trim());
-      
-      // Get posts from channel since the timestamp
-      const response = await this.api.get(`/channels/${channelId}/posts`, {
-        params: {
-          since: sinceTimestamp,
-          per_page: limit
-        }
-      });
+      console.log(`${this.LOG_PREFIX} ${emoji('🐛')}[${this.config.name}] Debug: sinceTimestamp=${sinceTimestamp}, limit=${limit}`.trim());
 
-      const posts = response.data.posts || {};
-      const order = response.data.order || [];
+      let posts: any = {};
+      let order: string[] = [];
+
+      // Try the since parameter first
+      try {
+        const sinceMs = Math.floor(sinceTimestamp);
+        const response = await this.api.get(`/channels/${channelId}/posts`, {
+          params: {
+            since: sinceMs,
+            per_page: limit
+          }
+        });
+
+        posts = response.data.posts || {};
+        order = response.data.order || [];
+        console.log(`${this.LOG_PREFIX} ${emoji('🐛')}[${this.config.name}] Debug: API response with since filter - posts count=${Object.keys(posts).length}, order length=${order.length}`.trim());
+      } catch (sinceError) {
+        console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}[${this.config.name}] Since parameter failed, trying alternative approach: ${sinceError}`.trim());
+      }
+
+      // If since parameter didn't work or returned no results, fall back to fetching recent posts and filtering
+      if (Object.keys(posts).length === 0) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🔄')}[${this.config.name}] Fallback: Fetching recent posts and filtering manually`.trim());
+
+        // Fetch more posts to ensure we don't miss anything due to API limitations
+        const fallbackLimit = Math.min(limit * 3, 300); // Fetch up to 3x the limit but cap at 300
+        const fallbackResponse = await this.api.get(`/channels/${channelId}/posts`, {
+          params: {
+            per_page: fallbackLimit
+          }
+        });
+
+        const allPosts = fallbackResponse.data.posts || {};
+        const allOrder = fallbackResponse.data.order || [];
+
+        console.log(`${this.LOG_PREFIX} ${emoji('🐛')}[${this.config.name}] Debug: Fallback fetched ${Object.keys(allPosts).length} total posts`.trim());
+
+        // Filter posts manually by timestamp
+        const filteredOrder = allOrder.filter((postId: string) => {
+          const post = allPosts[postId];
+          return post && post.create_at >= sinceTimestamp;
+        });
+
+        // Take only the requested limit after filtering
+        order = filteredOrder.slice(0, limit);
+        posts = {};
+        for (const postId of order) {
+          posts[postId] = allPosts[postId];
+        }
+
+        console.log(`${this.LOG_PREFIX} ${emoji('🐛')}[${this.config.name}] Debug: After manual filtering - ${order.length} posts match since timestamp`.trim());
+
+        if (order.length > 0) {
+          const latestPost = allPosts[allOrder[0]];
+          if (latestPost) {
+            console.log(`${this.LOG_PREFIX} ${emoji('🐛')}[${this.config.name}] Debug: Latest post timestamp=${latestPost.create_at} (${new Date(latestPost.create_at).toISOString()}), since=${sinceTimestamp} (${new Date(sinceTimestamp).toISOString()})`.trim());
+          }
+        }
+      }
       
       // Convert posts to our message format
       const messages: MattermostMessage[] = [];
