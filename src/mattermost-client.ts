@@ -1,5 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
+import http from 'http';
+import https from 'https';
 import { authenticator } from 'otplib';
 import { MattermostConfig, MattermostMessage, Channel, ChannelInfo, User, LoggingConfig, MessageAttachment } from './types';
 import FormData from 'form-data';
@@ -20,7 +22,8 @@ export class MattermostClient {
   private lastPongTime: number = 0;
   private lastMessageTime: number = 0;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
+  // 0 means unlimited (browser-like behaviour)
+  private maxReconnectAttempts: number = 0;
   private wsSequence: number = 1;
   private lastStatusCheck: number = 0;
   private processingMessages: Set<string> = new Set();
@@ -644,7 +647,27 @@ export class MattermostClient {
     
     console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] Creating WebSocket connection #${this.wsConnectionCount} (ID: ${this.wsConnectionId})`);
     
-    this.ws = new WebSocket(wsUrl);
+    // Build browser-like headers to satisfy strict proxies/WAFs
+    const browserUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    const headers: Record<string, string> = {
+      Origin: this.normalizeServerUrl(this.config.server),
+      'User-Agent': browserUA
+    };
+
+    // Enable TCP keep-alive like browsers do via the underlying Agent
+    const isSecure = wsUrl.startsWith('wss://');
+    const agent = isSecure
+      ? new https.Agent({ keepAlive: true })
+      : new http.Agent({ keepAlive: true });
+
+    this.ws = new WebSocket(wsUrl, undefined, {
+      headers,
+      agent,
+      // Keep close to browser defaults while staying conservative
+      handshakeTimeout: 15000,
+      // Some proxies mis-handle compression. Disable by default for stability.
+      perMessageDeflate: false
+    });
 
     // Capture this connection's ID to detect stale events from prior sockets
     const connectionIdForHandlers = this.wsConnectionId;
@@ -658,6 +681,14 @@ export class MattermostClient {
         return;
       }
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket OPENED (Connection ID: ${this.wsConnectionId})`);
+
+      // Try to enable OS-level TCP keepalive on the raw socket if available
+      try {
+        const sock: any = (this.ws as any)?._socket;
+        if (sock && typeof sock.setKeepAlive === 'function') {
+          sock.setKeepAlive(true, 30000);
+        }
+      } catch { /* noop */ }
       
       // Reset reconnect attempts on successful connection
       this.reconnectAttempts = 0;
@@ -676,6 +707,16 @@ export class MattermostClient {
       });
       
       this.startHeartbeat();
+    });
+
+    // Log HTTP upgrade failures to aid diagnosis when a proxy drops us
+    this.ws.on('unexpected-response', (_req: any, res: any) => {
+      try {
+        console.error(
+          `${this.LOG_PREFIX} ❌ [${this.config.name}] WebSocket unexpected-response: ` +
+          `status=${res?.statusCode}, headers=${JSON.stringify(res?.headers || {})}`
+        );
+      } catch { /* noop */ }
     });
 
     this.ws.on('pong', () => {
@@ -929,7 +970,7 @@ export class MattermostClient {
       });
     });
 
-    this.ws.on('close', async () => {
+    this.ws.on('close', async (code: number, reason: Buffer) => {
       // Ignore closes from stale sockets to avoid spurious reconnects
       if (connectionIdForHandlers !== this.wsConnectionId) {
         if (this.loggingConfig.debugWebSocketEvents) {
@@ -938,7 +979,8 @@ export class MattermostClient {
         return;
       }
 
-      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket CLOSED (Connection ID: ${this.wsConnectionId})`);
+      const reasonText = (() => { try { return reason?.toString(); } catch { return ''; } })();
+      console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket CLOSED (Connection ID: ${this.wsConnectionId}) code=${code} reason=${reasonText}`);
       
       // Clear the WebSocket reference and stop heartbeat
       this.ws = null;
@@ -958,12 +1000,14 @@ export class MattermostClient {
       }
 
       // Check if we should attempt reconnection
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      // If maxReconnectAttempts === 0, treat as unlimited (browser-like)
+      if (this.maxReconnectAttempts === 0 || this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
         const base = 5000 * Math.pow(1.5, this.reconnectAttempts - 1);
         const jitter = Math.floor(Math.random() * 1000); // add small jitter to avoid thundering herd
         const backoffDelay = Math.min(base + jitter, 30000);
-        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Will reconnect (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${backoffDelay}ms`);
+        const maxLabel = this.maxReconnectAttempts === 0 ? '∞' : String(this.maxReconnectAttempts);
+        console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Will reconnect (attempt ${this.reconnectAttempts}/${maxLabel}) in ${backoffDelay}ms`);
 
         // Cancel any existing scheduled reconnect and schedule a new one
         if (this.reconnectTimer) {
