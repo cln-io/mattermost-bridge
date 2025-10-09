@@ -130,42 +130,83 @@ export class MattermostClient {
         return;
       }
 
-      // Regular username/password authentication
-      // Prepare login payload
-      const loginPayload: any = {
-        login_id: this.config.username,
-        password: this.config.password
-      };
+      // Regular username/password authentication with TOTP retry logic
+      let loginAttempt = 0;
+      const maxAttempts = 2;
+      let lastError: any = null;
+      let loginResponse: any = null;
 
-      // Generate and include TOTP if MFA seed is provided
-      if (this.config.mfaSeed) {
-        const totpCode = this.generateTOTP();
-        if (totpCode) {
-          loginPayload.token = totpCode;
-          console.log(`${this.LOG_PREFIX} ${emoji('🔐')}[${this.config.name}] TOTP Code: ${totpCode}`.trim());
-          console.log(`${this.LOG_PREFIX} ${emoji('🕐')}[${this.config.name}] Time remaining: ${30 - (Math.floor(Date.now() / 1000) % 30)}s`.trim());
-          console.log(`${this.LOG_PREFIX} ${emoji('📤')}[${this.config.name}] Including MFA token in login request`.trim());
-        } else {
-          console.log(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to generate TOTP code`.trim());
-          throw new Error(`Failed to generate TOTP code for ${this.config.name}`);
+      while (loginAttempt < maxAttempts) {
+        loginAttempt++;
+
+        try {
+          // Prepare login payload
+          const loginPayload: any = {
+            login_id: this.config.username,
+            password: this.config.password
+          };
+
+          // Generate and include TOTP if MFA seed is provided
+          if (this.config.mfaSeed) {
+            const totpCode = this.generateTOTP();
+            if (totpCode) {
+              loginPayload.token = totpCode;
+              console.log(`${this.LOG_PREFIX} ${emoji('🔐')}[${this.config.name}] TOTP Code: ${totpCode}`.trim());
+              console.log(`${this.LOG_PREFIX} ${emoji('🕐')}[${this.config.name}] Time remaining: ${30 - (Math.floor(Date.now() / 1000) % 30)}s`.trim());
+              console.log(`${this.LOG_PREFIX} ${emoji('📤')}[${this.config.name}] Including MFA token in login request`.trim());
+            } else {
+              console.log(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to generate TOTP code`.trim());
+              throw new Error(`Failed to generate TOTP code for ${this.config.name}`);
+            }
+          } else {
+            console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] No MFA seed configured`.trim());
+          }
+
+          loginResponse = await this.api.post('/users/login', loginPayload);
+
+          this.token = loginResponse.headers.token;
+          this.userId = loginResponse.data.id;
+
+          // Set auth header for future requests
+          this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
+
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${loginResponse.data.username}`.trim());
+
+          // Success - break out of retry loop
+          break;
+        } catch (error: any) {
+          lastError = error;
+
+          // Check if this is an invalid MFA token error (401)
+          const is401 = error.response?.status === 401;
+          const isInvalidMFA = is401 && error.response?.data?.message?.toLowerCase().includes('mfa');
+
+          if (isInvalidMFA && loginAttempt < maxAttempts && this.config.mfaSeed) {
+            // First attempt failed - wait for TOTP to refresh
+            const timeRemaining = 30 - (Math.floor(Date.now() / 1000) % 30);
+            const waitTime = timeRemaining + 1; // Wait for next TOTP code + 1 second buffer
+
+            console.warn(`${this.LOG_PREFIX} ${emoji('⏱️')}[${this.config.name}] Invalid MFA token (attempt ${loginAttempt}/${maxAttempts}). Waiting ${waitTime}s for next TOTP code...`.trim());
+
+            // Wait for the TOTP code to refresh
+            await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+
+            console.log(`${this.LOG_PREFIX} ${emoji('🔄')}[${this.config.name}] Retrying login with fresh TOTP code...`.trim());
+          } else {
+            // Not a TOTP issue, or we've exhausted retries - throw the error
+            throw error;
+          }
         }
-      } else {
-        console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] No MFA seed configured`.trim());
       }
 
-      const response = await this.api.post('/users/login', loginPayload);
+      // If we exhausted all attempts, throw the last error with full details
+      if (loginAttempt >= maxAttempts && lastError) {
+        throw lastError;
+      }
 
-      this.token = response.headers.token;
-      this.userId = response.data.id;
-
-      // Set auth header for future requests
-      this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-
-      console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${response.data.username}`.trim());
-      
       // Set up status channel for status updates if enabled and user is not a bot (only for destination)
-      if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination) {
-        if (response.data.is_bot) {
+      if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination && loginResponse) {
+        if (loginResponse.data.is_bot) {
           console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
         } else {
           try {
