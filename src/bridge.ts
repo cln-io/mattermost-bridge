@@ -98,12 +98,41 @@ export class MattermostBridge {
 
       // Resolve target channel info
       console.log(`${this.LOG_PREFIX} ${emoji('🔍')}[${this.config.right.name}] Looking up channel (${this.targetChannelId})[${this.targetChannelId}]`.trim());
-      this.targetChannelInfo = await this.rightClient.getChannelById(this.targetChannelId);
-      
+
+      // Check if we can access the channel, and if not (403 error), try to join it first
+      try {
+        this.targetChannelInfo = await this.rightClient.getChannelById(this.targetChannelId);
+      } catch (error: any) {
+        if (error.response?.status === 403) {
+          console.log(`${this.LOG_PREFIX} ${emoji('🔒')}[${this.config.right.name}] Permission denied - checking if bot needs to join channel...`.trim());
+
+          // Check if bot is a member
+          const isMember = await this.rightClient.isChannelMember(this.targetChannelId);
+
+          if (!isMember) {
+            console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.right.name}] Bot is not a member - attempting to join channel [${this.targetChannelId}]...`.trim());
+            const joined = await this.rightClient.joinChannel(this.targetChannelId);
+
+            if (!joined) {
+              throw new Error(`Failed to join target channel '${this.targetChannelId}' on ${this.config.right.name}. Bot may need to be manually added to the channel.`);
+            }
+
+            // Try to get channel info again after joining
+            this.targetChannelInfo = await this.rightClient.getChannelById(this.targetChannelId);
+          } else {
+            // Bot is a member but still got 403 - something else is wrong
+            throw error;
+          }
+        } else {
+          // Not a 403 error, re-throw
+          throw error;
+        }
+      }
+
       if (!this.targetChannelInfo) {
         throw new Error(`Target channel '${this.targetChannelId}' not found on ${this.config.right.name}`);
       }
-      
+
       console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.right.name}] Found channel: (${this.targetChannelInfo.name})[${this.targetChannelId}]`.trim());
       console.log('');
 

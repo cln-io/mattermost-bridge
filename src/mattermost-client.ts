@@ -251,7 +251,7 @@ export class MattermostClient {
     try {
       const response = await this.api.get(`/channels/${channelId}`);
       const channel = response.data;
-      
+
       const channelInfo: ChannelInfo = {
         id: channel.id,
         name: channel.name,
@@ -261,7 +261,7 @@ export class MattermostClient {
 
       // Cache the result
       this.channelCache.set(channelId, channelInfo);
-      
+
       return channelInfo;
     } catch (error: any) {
       if (error.response?.status === 404) {
@@ -270,8 +270,42 @@ export class MattermostClient {
         this.channelCache.set(channelId, null as any);
         return null;
       }
+      if (error.response?.status === 403) {
+        console.warn(`${this.LOG_PREFIX} ${emoji('🔒')}[${this.config.name}] Permission denied accessing channel (unknown)[${channelId}] - bot may not be a member`.trim());
+        throw error;
+      }
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error getting channel (unknown)[${channelId}]:`.trim(), error.response?.data || error.message);
       throw error;
+    }
+  }
+
+  async isChannelMember(channelId: string, userId?: string): Promise<boolean> {
+    try {
+      const userIdToCheck = userId || this.userId;
+      const response = await this.api.get(`/channels/${channelId}/members/${userIdToCheck}`);
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] User (${userIdToCheck}) is a member of channel [${channelId}]`.trim());
+      return true;
+    } catch (error: any) {
+      if (error.response?.status === 404 || error.response?.status === 403) {
+        console.log(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] User (${userId || this.userId}) is NOT a member of channel [${channelId}]`.trim());
+        return false;
+      }
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Error checking channel membership:`.trim(), error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async joinChannel(channelId: string): Promise<boolean> {
+    try {
+      console.log(`${this.LOG_PREFIX} ${emoji('🚪')}[${this.config.name}] Attempting to join channel [${channelId}]...`.trim());
+      await this.api.post(`/channels/${channelId}/members`, {
+        user_id: this.userId
+      });
+      console.log(`${this.LOG_PREFIX} ${emoji('✅')}[${this.config.name}] Successfully joined channel [${channelId}]`.trim());
+      return true;
+    } catch (error: any) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[${this.config.name}] Failed to join channel [${channelId}]:`.trim(), error.response?.data || error.message);
+      return false;
     }
   }
 
