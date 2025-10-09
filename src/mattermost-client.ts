@@ -135,6 +135,7 @@ export class MattermostClient {
       const maxAttempts = 2;
       let lastError: any = null;
       let loginResponse: any = null;
+      let loginSucceeded = false;
 
       while (loginAttempt < maxAttempts) {
         loginAttempt++;
@@ -172,7 +173,8 @@ export class MattermostClient {
 
           console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${loginResponse.data.username}`.trim());
 
-          // Success - break out of retry loop
+          // Success - mark as succeeded and break out of retry loop
+          loginSucceeded = true;
           break;
         } catch (error: any) {
           lastError = error;
@@ -199,8 +201,8 @@ export class MattermostClient {
         }
       }
 
-      // If we exhausted all attempts, throw the last error with full details
-      if (loginAttempt >= maxAttempts && lastError) {
+      // If we exhausted all attempts without success, throw the last error with full details
+      if (!loginSucceeded && lastError) {
         throw lastError;
       }
 
