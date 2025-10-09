@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'DOCKERHUB.md'
+      - '**/*.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
     tags:
       - 'v*'
   workflow_dispatch:
