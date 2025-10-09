@@ -76,8 +76,11 @@ MATTERMOST_LEFT_TEAM=team-name
 
 MATTERMOST_RIGHT_NAME=TargetServer
 MATTERMOST_RIGHT_SERVER=https://mattermost.target.com
+# Option 1: Use regular user account
 MATTERMOST_RIGHT_USERNAME=bridge-user@target.com
 MATTERMOST_RIGHT_PASSWORD_B64=<base64-encoded-password>
+# Option 2: Use bot token (skips username/password if provided)
+# MATTERMOST_RIGHT_BOT_TOKEN=your-bot-access-token
 
 # Required: Channel IDs
 SOURCE_CHANNEL_ID=abc123def456...  # Single channel
@@ -100,10 +103,11 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | **Right Mattermost (Target)** |
 | `MATTERMOST_RIGHT_NAME` | Display name for the target server | ✅ | - | `TargetServer` |
 | `MATTERMOST_RIGHT_SERVER` | URL of the target Mattermost server | ✅ | - | `https://mattermost.target.com` |
-| `MATTERMOST_RIGHT_USERNAME` | Username for authentication | ✅ | - | `bridge-user@target.com` |
-| `MATTERMOST_RIGHT_PASSWORD_B64` | Base64-encoded password | ✅ | - | `cGFzc3dvcmQxMjMh` |
+| `MATTERMOST_RIGHT_BOT_TOKEN` | Bot access token (if using bot account) | ❌ | - | `your-bot-access-token` |
+| `MATTERMOST_RIGHT_USERNAME` | Username for authentication (not needed if using bot token) | ✅* | - | `bridge-user@target.com` |
+| `MATTERMOST_RIGHT_PASSWORD_B64` | Base64-encoded password (not needed if using bot token) | ✅* | - | `cGFzc3dvcmQxMjMh` |
 | `MATTERMOST_RIGHT_TEAM` | Team name (for message links) | ❌ | - | `team-name` |
-| `MATTERMOST_RIGHT_MFA_SEED` | MFA/2FA seed (if MFA enabled) | ❌ | - | `GEZDGNBVGY3TQOJQ` |
+| `MATTERMOST_RIGHT_MFA_SEED` | MFA/2FA seed (if MFA enabled, not used with bot token) | ❌ | - | `GEZDGNBVGY3TQOJQ` |
 | **Bridge Configuration** |
 | `SOURCE_CHANNEL_ID` | ID of the channel(s) to monitor. Can be a single ID or comma-separated list | ✅ | - | `abc123def456...` or `abc123,def456,ghi789` |
 | `TARGET_CHANNEL_ID` | ID of the channel to post to | ✅ | - | `xyz789uvw012...` |
@@ -128,6 +132,31 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | **Appearance** |
 | `FOOTER_ICON` | Custom icon URL for message footers | ❌ | - | `https://example.com/icon.png` |
 | `LEFT_MESSAGE_EMOJI` | Emoji to add to original message after bridging | ❌ | - | `envelope_with_arrow`, `white_check_mark` |
+
+**Note:** ✅* means required only if `MATTERMOST_RIGHT_BOT_TOKEN` is not provided.
+
+### Bot Account Setup (Optional)
+
+Instead of using a regular user account for the target server, you can create a bot account:
+
+1. **Create Bot Account in Mattermost:**
+   - Go to **Integrations → Bot Accounts** on your target Mattermost server
+   - Click **Add Bot Account**
+   - Configure the bot with a username and display name
+   - Grant appropriate permissions (typically needs to post messages)
+   - Copy the generated **Access Token**
+
+2. **Configure Bot Token:**
+   ```env
+   MATTERMOST_RIGHT_BOT_TOKEN=your-bot-access-token
+   ```
+
+   When using a bot token, `MATTERMOST_RIGHT_USERNAME` and `MATTERMOST_RIGHT_PASSWORD_B64` are not required.
+
+3. **Bot Account Limitations:**
+   - Status channel updates (`STATS_CHANNEL_UPDATES`) are automatically disabled for bot accounts
+   - Bot accounts cannot use MFA/2FA
+   - Messages will appear as coming from the bot user
 
 ### Password Encoding
 

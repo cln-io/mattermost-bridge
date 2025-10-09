@@ -5,6 +5,7 @@ export interface MattermostConfig {
   password: string;
   mfaSeed?: string;
   team?: string; // Team name for generating message links
+  botToken?: string; // Bot token for authentication (skips username/password if provided)
 }
 
 export interface BridgeRule {

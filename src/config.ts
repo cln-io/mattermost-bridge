@@ -23,19 +23,26 @@ if (fs.existsSync(envLocalPath)) {
 }
 
 export function loadConfig(): Config {
+  // Check if bot token is provided for right server
+  const rightBotToken = process.env.MATTERMOST_RIGHT_BOT_TOKEN?.trim();
+
   const requiredEnvVars = [
     'MATTERMOST_LEFT_NAME',
     'MATTERMOST_LEFT_SERVER',
-    'MATTERMOST_LEFT_USERNAME', 
+    'MATTERMOST_LEFT_USERNAME',
     'MATTERMOST_LEFT_PASSWORD_B64',  // Changed from MATTERMOST_LEFT_PASSWORD
     'MATTERMOST_LEFT_TEAM',
     'MATTERMOST_RIGHT_NAME',
     'MATTERMOST_RIGHT_SERVER',
-    'MATTERMOST_RIGHT_USERNAME',
-    'MATTERMOST_RIGHT_PASSWORD_B64',  // Changed from MATTERMOST_RIGHT_PASSWORD
     'SOURCE_CHANNEL_ID',
     'TARGET_CHANNEL_ID'
   ];
+
+  // Only require username/password for right server if bot token is not provided
+  if (!rightBotToken) {
+    requiredEnvVars.push('MATTERMOST_RIGHT_USERNAME');
+    requiredEnvVars.push('MATTERMOST_RIGHT_PASSWORD_B64');
+  }
 
   // Check for missing environment variables
   for (const envVar of requiredEnvVars) {
@@ -46,7 +53,7 @@ export function loadConfig(): Config {
 
   // Decode base64 passwords
   const leftPassword = Buffer.from(process.env.MATTERMOST_LEFT_PASSWORD_B64!, 'base64').toString('utf-8');
-  const rightPassword = Buffer.from(process.env.MATTERMOST_RIGHT_PASSWORD_B64!, 'base64').toString('utf-8');
+  const rightPassword = rightBotToken ? '' : Buffer.from(process.env.MATTERMOST_RIGHT_PASSWORD_B64!, 'base64').toString('utf-8');
 
   // Parse heartbeat configuration
   const heartbeatUrl = process.env.HEARTBEAT_URL;
@@ -127,10 +134,15 @@ export function loadConfig(): Config {
     console.log(`${LOG_PREFIX} ${emoji('🔕')}Catch-up mode disabled (ENABLE_CATCH_UP not set to 'true')`.trim());
   }
 
+  // Log bot token configuration
+  if (rightBotToken) {
+    console.log(`${LOG_PREFIX} ${emoji('🤖')}Right server will use bot token authentication (username/password not required)`.trim());
+  }
+
   // Parse source channel ID(s) - can be a single ID or comma-separated list
   let sourceChannelId: string | string[];
   const sourceChannelIdRaw = process.env.SOURCE_CHANNEL_ID!;
-  
+
   if (sourceChannelIdRaw.includes(',')) {
     // Parse as array
     sourceChannelId = sourceChannelIdRaw.split(',').map(id => id.trim()).filter(id => id.length > 0);
@@ -152,10 +164,11 @@ export function loadConfig(): Config {
     right: {
       name: process.env.MATTERMOST_RIGHT_NAME!,
       server: process.env.MATTERMOST_RIGHT_SERVER!,
-      username: process.env.MATTERMOST_RIGHT_USERNAME!,
+      username: process.env.MATTERMOST_RIGHT_USERNAME || '',
       password: rightPassword,
       mfaSeed: process.env.MATTERMOST_RIGHT_MFA_SEED,
-      team: process.env.MATTERMOST_RIGHT_TEAM
+      team: process.env.MATTERMOST_RIGHT_TEAM,
+      botToken: rightBotToken
     },
     rule: {
       sourceChannelId: sourceChannelId,

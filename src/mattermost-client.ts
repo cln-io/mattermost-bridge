@@ -107,7 +107,30 @@ export class MattermostClient {
     try {
       const normalizedServer = this.normalizeServerUrl(this.config.server);
       console.log(`${this.LOG_PREFIX} Logging into ${this.config.name} (${normalizedServer})...`);
-      
+
+      // Check if bot token is provided
+      if (this.config.botToken) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Using bot token authentication`.trim());
+
+        // Bot authentication - set the token directly
+        this.token = this.config.botToken;
+        this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
+
+        // Get bot user info
+        const response = await this.api.get('/users/me');
+        this.userId = response.data.id;
+
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully authenticated to ${this.config.name} as bot: ${response.data.username}`.trim());
+
+        // Bot accounts don't have status channel updates
+        if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination) {
+          console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
+        }
+
+        return;
+      }
+
+      // Regular username/password authentication
       // Prepare login payload
       const loginPayload: any = {
         login_id: this.config.username,
@@ -129,15 +152,15 @@ export class MattermostClient {
       } else {
         console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] No MFA seed configured`.trim());
       }
-      
+
       const response = await this.api.post('/users/login', loginPayload);
 
       this.token = response.headers.token;
       this.userId = response.data.id;
-      
+
       // Set auth header for future requests
       this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-      
+
       console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully logged in to ${this.config.name} as ${response.data.username}`.trim());
       
       // Set up status channel for status updates if enabled and user is not a bot (only for destination)
