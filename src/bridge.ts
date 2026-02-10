@@ -322,10 +322,11 @@ export class MattermostBridge {
       } else {
         // Post message with attachment and files
         const postedMessage = await this.rightClient.postMessageWithAttachment(
-          this.targetChannelId, 
+          this.targetChannelId,
           '', // Empty main message text
           attachment,
-          uploadedFileIds.length > 0 ? uploadedFileIds : undefined
+          uploadedFileIds.length > 0 ? uploadedFileIds : undefined,
+          this.config.requestAcknowledgement
         );
         
         // Store the message ID mapping
@@ -437,8 +438,8 @@ export class MattermostBridge {
         this.trackBridgeEvent('message_edit_dry_run');
       } else {
         // Update the message
-        await this.rightClient.updateMessage(targetMessageId, '', updatedPostData.props);
-        
+        await this.rightClient.updateMessage(targetMessageId, '', updatedPostData.props, this.config.requestAcknowledgement);
+
         console.log(`${this.LOG_PREFIX} ${emoji('✅')}(${sourceChannelName})[${sourceChannelId}] Message ${targetMessageId} updated in (${targetChannelName})[${this.targetChannelId}]`.trim());
         
         // Track message edit bridging event

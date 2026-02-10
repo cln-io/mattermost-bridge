@@ -52,6 +52,7 @@ describe('MattermostBridge', () => {
       dryRun: false,
       dontForwardFor: ['@example.com'],
       footerIcon: 'https://icon.example.com/footer.png',
+      requestAcknowledgement: false,
       catchUp: {
         enabled: false,
         maxMessagesToRecover: 100
@@ -320,7 +321,8 @@ describe('MattermostBridge', () => {
         'target456',
         '',
         expect.any(Object),
-        ['newfile1', 'newfile2']
+        ['newfile1', 'newfile2'],
+        false
       );
     });
 

@@ -45,6 +45,7 @@ describe('MattermostClient', () => {
     mockAxiosInstance = {
       get: jest.fn(),
       post: jest.fn(),
+      put: jest.fn(),
       patch: jest.fn(),
       defaults: { headers: { common: {} } }
     };
@@ -265,6 +266,81 @@ describe('MattermostClient', () => {
         message: '',
         props: { attachments: [attachment] },
         file_ids: ['file1', 'file2']
+      });
+    });
+
+    it('should post message with attachment and acknowledgement request', async () => {
+      const attachment = {
+        color: '#87CEEB',
+        author_name: 'Test User',
+        text: 'Test message'
+      };
+
+      mockAxiosInstance.post.mockResolvedValue({ data: { id: 'post123' } });
+
+      await client.postMessageWithAttachment('channel123', '', attachment, ['file1', 'file2'], true);
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/posts', {
+        channel_id: 'channel123',
+        message: '',
+        props: { attachments: [attachment] },
+        file_ids: ['file1', 'file2'],
+        metadata: {
+          priority: {
+            priority: 'important',
+            requested_ack: true
+          }
+        }
+      });
+    });
+
+    it('should post message with attachment without acknowledgement request', async () => {
+      const attachment = {
+        color: '#87CEEB',
+        author_name: 'Test User',
+        text: 'Test message'
+      };
+
+      mockAxiosInstance.post.mockResolvedValue({ data: { id: 'post123' } });
+
+      await client.postMessageWithAttachment('channel123', '', attachment, undefined, false);
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/posts', {
+        channel_id: 'channel123',
+        message: '',
+        props: { attachments: [attachment] }
+      });
+    });
+
+    it('should update message without acknowledgement request', async () => {
+      mockAxiosInstance.put.mockResolvedValue({ data: { id: 'post123' } });
+
+      const props = { attachments: [{ text: 'Updated message' }] };
+      await client.updateMessage('post123', 'Updated text', props);
+
+      expect(mockAxiosInstance.put).toHaveBeenCalledWith('/posts/post123', {
+        id: 'post123',
+        message: 'Updated text',
+        props: props
+      });
+    });
+
+    it('should update message with acknowledgement request', async () => {
+      mockAxiosInstance.put.mockResolvedValue({ data: { id: 'post123' } });
+
+      const props = { attachments: [{ text: 'Updated message' }] };
+      await client.updateMessage('post123', 'Updated text', props, true);
+
+      expect(mockAxiosInstance.put).toHaveBeenCalledWith('/posts/post123', {
+        id: 'post123',
+        message: 'Updated text',
+        props: props,
+        metadata: {
+          priority: {
+            priority: 'important',
+            requested_ack: true
+          }
+        }
       });
     });
   });

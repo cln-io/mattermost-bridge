@@ -441,17 +441,27 @@ export class MattermostClient {
     }
   }
 
-  async updateMessage(postId: string, message: string, props?: any): Promise<void> {
+  async updateMessage(postId: string, message: string, props?: any, requestAck?: boolean): Promise<void> {
     try {
       const updateData: any = {
         id: postId,
         message: message
       };
-      
+
       if (props) {
         updateData.props = props;
       }
-      
+
+      // Add metadata with priority for acknowledgement if requested
+      if (requestAck) {
+        updateData.metadata = {
+          priority: {
+            priority: 'important',
+            requested_ack: true
+          }
+        };
+      }
+
       await this.api.put(`/posts/${postId}`, updateData);
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error updating message:`, error.response?.data || error.message);
@@ -566,7 +576,7 @@ export class MattermostClient {
   }
 
 
-  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[]): Promise<any> {
+  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[], requestAck?: boolean): Promise<any> {
     try {
       const postData: any = {
         channel_id: channelId,
@@ -579,6 +589,16 @@ export class MattermostClient {
       // Add file IDs if provided
       if (fileIds && fileIds.length > 0) {
         postData.file_ids = fileIds;
+      }
+
+      // Add metadata with priority for acknowledgement if requested
+      if (requestAck) {
+        postData.metadata = {
+          priority: {
+            priority: 'important',
+            requested_ack: true
+          }
+        };
       }
 
       const response = await this.api.post('/posts', postData);
