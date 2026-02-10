@@ -38,6 +38,7 @@ export interface Config {
   footerIcon?: string; // Optional footer icon URL
   leftMessageEmoji?: string; // Emoji to add to original message after bridging
   catchUp: CatchUpConfig; // Message catch-up configuration
+  requestAcknowledgement: boolean; // Enable acknowledgement button on messages
 }
 
 export interface CatchUpConfig {

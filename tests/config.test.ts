@@ -251,4 +251,39 @@ describe('loadConfig', () => {
 
     expect(config.rule.sourceChannelId).toEqual(['channel1', 'channel2', 'channel3']);
   });
+
+  it('should parse REQUEST_ACKNOWLEDGEMENT as false by default', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.requestAcknowledgement).toBe(false);
+  });
+
+  it('should parse REQUEST_ACKNOWLEDGEMENT environment variable as true', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.REQUEST_ACKNOWLEDGEMENT = 'true';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.requestAcknowledgement).toBe(true);
+  });
+
+  it('should parse REQUEST_ACKNOWLEDGEMENT environment variable as false', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    setRequiredEnvVars();
+    process.env.REQUEST_ACKNOWLEDGEMENT = 'false';
+
+    // Import after setting up mocks
+    const { loadConfig } = require('../src/config');
+    const config = loadConfig();
+
+    expect(config.requestAcknowledgement).toBe(false);
+  });
 });

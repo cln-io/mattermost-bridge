@@ -113,6 +113,14 @@ export function loadConfig(): Config {
     console.log(`${LOG_PREFIX} ${emoji('📮')}Left message emoji disabled (LEFT_MESSAGE_EMOJI not set)`.trim());
   }
 
+  // Parse request acknowledgement configuration
+  const requestAcknowledgement = process.env.REQUEST_ACKNOWLEDGEMENT === 'true';
+  if (requestAcknowledgement) {
+    console.log(`${LOG_PREFIX} ${emoji('✅')}Request acknowledgement ENABLED - messages will have ACK button`.trim());
+  } else {
+    console.log(`${LOG_PREFIX} ${emoji('✅')}Request acknowledgement disabled (REQUEST_ACKNOWLEDGEMENT not set)`.trim());
+  }
+
   // Log information about the new attachment-based system
   console.log(`${LOG_PREFIX} ${emoji('📎')}Using minimal baby blue attachments with profile pictures`.trim());
   console.log(`${LOG_PREFIX} ${emoji('🖼️')}Profile pictures will be downloaded from source and uploaded to target`.trim());
@@ -190,6 +198,7 @@ export function loadConfig(): Config {
     dontForwardFor: dontForwardFor,
     footerIcon: footerIcon || undefined,
     leftMessageEmoji: leftMessageEmoji || undefined,
+    requestAcknowledgement: requestAcknowledgement,
     catchUp: {
       enabled: catchUpEnabled,
       persistencePath: catchUpPath,
