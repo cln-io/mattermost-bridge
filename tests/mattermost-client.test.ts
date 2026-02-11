@@ -287,7 +287,6 @@ describe('MattermostClient', () => {
         file_ids: ['file1', 'file2'],
         metadata: {
           priority: {
-            priority: 'important',
             requested_ack: true
           }
         }
@@ -337,7 +336,6 @@ describe('MattermostClient', () => {
         props: props,
         metadata: {
           priority: {
-            priority: 'important',
             requested_ack: true
           }
         }
