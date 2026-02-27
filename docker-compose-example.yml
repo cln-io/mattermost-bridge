@@ -3,6 +3,12 @@ version: '3.8'
 services:
   mattermost-bridge:
     image: clnio/mattermost-bridge:latest
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     environment:
       # Left Mattermost Instance
       MATTERMOST_LEFT_NAME: DEMO-LEFT

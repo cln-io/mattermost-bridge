@@ -1189,6 +1189,16 @@ export class MattermostClient {
     this.messageEditHandler = onMessageEdit;
   }
 
+  getHealthData(): { wsState: string; lastMessageAgoMs: number; reconnectAttempts: number; connectionId: string } {
+    const wsState = this.getWebSocketHealth() || 'disconnected';
+    return {
+      wsState,
+      lastMessageAgoMs: this.lastMessageTime ? Date.now() - this.lastMessageTime : -1,
+      reconnectAttempts: this.reconnectAttempts,
+      connectionId: this.wsConnectionId,
+    };
+  }
+
   getWebSocketHealth(): string | null {
     if (!this.ws) return null;
     const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];

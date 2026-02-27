@@ -48,18 +48,9 @@ USER appuser
 # Expose port (if needed later for health checks)
 EXPOSE 3000
 
-# Health check — fail if health.json is stale (>5 min) or WS in bad state
+# Health check via HTTP endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD node -e " \
-    const fs = require('fs'); \
-    try { \
-      const h = JSON.parse(fs.readFileSync('/app/data/health.json','utf8')); \
-      const age = Date.now() - h.timestamp; \
-      if (age > 300000) { console.error('stale: ' + age + 'ms'); process.exit(1); } \
-      if (/CLOSED|CLOSING|CONNECTING/.test(h.wsState)) { console.error('ws: ' + h.wsState); process.exit(1); } \
-      console.log('ok: ' + h.wsState); \
-    } catch(e) { console.error(e.message); process.exit(1); } \
-  "
+  CMD wget -q -O- http://localhost:3000/health || exit 1
 
 # Start the application directly with node
 CMD ["node", "dist/index.js"]

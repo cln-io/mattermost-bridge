@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import http from 'http';
 import { MattermostClient } from './mattermost-client';
 import { Config, MattermostMessage, ChannelInfo } from './types';
 import { createMessageAttachment } from './message-attachment';
@@ -36,6 +35,9 @@ export class MattermostBridge {
   
   // Message tracker for catch-up mode
   private messageTracker: MessageTracker;
+
+  // HTTP health endpoint
+  private healthServer: http.Server | null = null;
 
   constructor(private config: Config) {
     // Create log buffer first so we can pass it to clients
@@ -202,7 +204,10 @@ export class MattermostBridge {
       
       // Step 7: Start heartbeat monitoring (only after successful connection)
       this.heartbeatService.start();
-      
+
+      // Step 8: Start HTTP health endpoint
+      this.startHealthServer();
+
     } catch (error) {
       console.error(`${this.LOG_PREFIX} ${emoji('❌')}Failed to start bridge:`.trim(), error);
       throw error;
@@ -717,20 +722,30 @@ export class MattermostBridge {
     this.bridgeEvents.clear();
     this.lastEventSummaryTime = now;
 
-    // Write health file for Docker healthcheck
-    this.writeHealthFile();
   }
 
-  private writeHealthFile(): void {
-    try {
-      const wsHealth = this.leftClient.getWebSocketHealth();
-      const health = {
-        timestamp: Date.now(),
-        wsState: wsHealth || 'disconnected'
-      };
-      const healthPath = path.join(process.cwd(), 'data', 'health.json');
-      fs.writeFileSync(healthPath, JSON.stringify(health));
-    } catch { /* noop — health file is best-effort */ }
+  private startHealthServer(): void {
+    const port = 3000;
+    this.healthServer = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/health') {
+        const wsState = this.leftClient.getWebSocketHealth();
+        const healthy = wsState === 'OPEN';
+        const body = JSON.stringify({
+          status: healthy ? 'ok' : 'degraded',
+          uptime: process.uptime(),
+          left: this.leftClient.getHealthData(),
+        });
+        res.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
+        res.end(body);
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    this.healthServer.listen(port, () => {
+      console.log(`${this.LOG_PREFIX} ${emoji('🏥')}Health endpoint listening on port ${port}`.trim());
+    });
+    this.healthServer.unref();
   }
 
   private generateEventSummary(events: Map<string, number>, prefix: string): string {
@@ -812,6 +827,12 @@ export class MattermostBridge {
     this.profilePictureCache.clear();
     console.log(`${this.LOG_PREFIX} ${emoji('🗑️')}Cleared profile picture cache`.trim());
     
+    // Stop health server
+    if (this.healthServer) {
+      this.healthServer.close();
+      this.healthServer = null;
+    }
+
     // Stop log buffer
     this.logBuffer.stop();
   }
