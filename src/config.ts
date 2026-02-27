@@ -88,6 +88,18 @@ export function loadConfig(): Config {
     console.log(`${LOG_PREFIX} ${emoji('🏃‍♂️')}DRY RUN MODE ENABLED - Messages will NOT be posted to target channel`.trim());
   }
 
+  // Parse bridge direction
+  const bridgeDirection = (process.env.BRIDGE_DIRECTION || 'unidirectional') as 'unidirectional' | 'bidirectional';
+  if (!['unidirectional', 'bidirectional'].includes(bridgeDirection)) {
+    console.error(`${LOG_PREFIX} ${emoji('❌')}Invalid BRIDGE_DIRECTION value: ${bridgeDirection}. Must be 'unidirectional' or 'bidirectional'`.trim());
+    process.exit(1);
+  }
+  if (bridgeDirection === 'bidirectional') {
+    console.log(`${LOG_PREFIX} ${emoji('🔄')}Bidirectional bridging enabled (left→right AND right→left)`.trim());
+  } else {
+    console.log(`${LOG_PREFIX} ${emoji('➡️')}Unidirectional bridging (left→right only)`.trim());
+  }
+
   // Parse email exclusion list
   const dontForwardFor: string[] = [];
   if (process.env.DONT_FORWARD_FOR) {
@@ -203,6 +215,7 @@ export function loadConfig(): Config {
       enabled: catchUpEnabled,
       persistencePath: catchUpPath,
       maxMessagesToRecover: maxMessagesToRecover
-    }
+    },
+    bridgeDirection: bridgeDirection
   };
 }

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { MattermostClient } from './mattermost-client';
 import { Config, MattermostMessage, ChannelInfo } from './types';
 import { createMessageAttachment } from './message-attachment';
@@ -169,11 +171,25 @@ export class MattermostBridge {
         this.sourceChannelIds,
         (msg) => this.handleMessage(msg, msg.channel_id)
       );
-      
+
       // Set up message edit handler
       this.leftClient.setMessageEditHandler(
         (msg) => this.handleMessageEdit(msg, msg.channel_id)
       );
+
+      // If bidirectional, also listen on right server
+      if (this.config.bridgeDirection === 'bidirectional') {
+        console.log(`${this.LOG_PREFIX} ${emoji('🔄')}Setting up bidirectional monitoring...`.trim());
+        this.rightClient.connectWebSocket(
+          [this.targetChannelId],
+          (msg) => this.handleRightMessage(msg, msg.channel_id)
+        );
+
+        // Set up message edit handler for right side
+        this.rightClient.setMessageEditHandler(
+          (msg) => this.handleRightMessageEdit(msg, msg.channel_id)
+        );
+      }
 
       console.log(`${this.LOG_PREFIX} ${emoji('✅')}Bridge is now active and listening for messages...`.trim());
       if (this.config.dryRun) {
@@ -454,6 +470,152 @@ export class MattermostBridge {
     }
   }
 
+  private async handleRightMessage(message: MattermostMessage, sourceChannelId: string): Promise<void> {
+    // Post from right back to left (first source channel)
+    const targetChannelId = this.sourceChannelIds[0]; // Use first source channel as target
+    const sourceChannelInfo = this.targetChannelInfo; // Right is now source
+    const sourceChannelName = sourceChannelInfo?.name || sourceChannelId;
+    const targetChannelInfo = this.sourceChannelInfos.get(targetChannelId);
+    const targetChannelName = targetChannelInfo?.name || targetChannelId;
+
+    try {
+      // Get user details (cached for performance)
+      const user = await this.rightClient.getUser(message.user_id);
+
+      // Set channel and user context for log buffer
+      const channelContext = `${sourceChannelName}[${sourceChannelId}]`;
+      const userContext = `${user.username}[${message.user_id}]`;
+      this.logBuffer.setChannelContext('current', channelContext);
+      this.logBuffer.setUserContext('current', userContext);
+
+      console.log(`${this.LOG_PREFIX} ${emoji('📨')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] (${message.nickname ? `${message.nickname} (@${message.username})` : message.username})[${message.user_id}]: ${message.message}`.trim());
+
+      // Check if message has file attachments
+      if (message.file_ids && message.file_ids.length > 0) {
+        console.log(`${this.LOG_PREFIX} ${emoji('📎')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Message has ${message.file_ids.length} file attachment(s)`.trim());
+      }
+
+      // Check if user's email matches any excluded domains
+      if (this.config.dontForwardFor.length > 0 && user.email) {
+        const userEmail = user.email.toLowerCase();
+        const shouldExclude = this.config.dontForwardFor.some(domain => {
+          const normalizedDomain = domain.toLowerCase();
+          const domainToCheck = normalizedDomain.startsWith('@') ? normalizedDomain : '@' + normalizedDomain;
+          return userEmail.endsWith(domainToCheck);
+        });
+
+        if (shouldExclude) {
+          console.log(`${this.LOG_PREFIX} ${emoji('🚫')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Message from ${user.username} (${user.email}) excluded due to email domain filter`.trim());
+          this.trackBridgeEvent('message_excluded_reverse');
+          return;
+        }
+      }
+
+      // Get or upload profile picture
+      let profilePictureUrl: string | undefined;
+      const displayName = message.nickname ? `${message.nickname} (@${message.username})` : message.username;
+
+      // Check cache first (using different cache key for reverse direction)
+      const cacheKey = `reverse_${message.user_id}`;
+      if (this.profilePictureCache.has(cacheKey)) {
+        profilePictureUrl = this.profilePictureCache.get(cacheKey);
+        console.log(`${this.LOG_PREFIX} ${emoji('🖼️')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Using cached profile picture for ${displayName}`.trim());
+      } else {
+        // Download profile picture from right server
+        console.log(`${this.LOG_PREFIX} ${emoji('📥')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Downloading profile picture for ${displayName}...`.trim());
+        const imageBuffer = await this.rightClient.downloadProfilePicture(message.user_id);
+
+        if (imageBuffer) {
+          // Upload to left server
+          console.log(`${this.LOG_PREFIX} ${emoji('📤')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Uploading profile picture for ${displayName}...`.trim());
+          const uploadedUrl = await this.leftClient.uploadProfilePicture(
+            imageBuffer,
+            `${message.user_id}_profile.png`,
+            targetChannelId
+          );
+
+          if (uploadedUrl) {
+            profilePictureUrl = uploadedUrl;
+            this.profilePictureCache.set(cacheKey, uploadedUrl);
+            console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Profile picture uploaded and cached for ${displayName}`.trim());
+          } else {
+            console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Failed to upload profile picture for ${displayName}`.trim());
+          }
+        } else {
+          console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Failed to download profile picture for ${displayName}`.trim());
+        }
+      }
+
+      // Handle file attachments
+      let uploadedFileIds: string[] = [];
+      if (message.file_ids && message.file_ids.length > 0) {
+        console.log(`${this.LOG_PREFIX} ${emoji('📎')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Processing ${message.file_ids.length} file attachment(s)...`.trim());
+
+        const filesToUpload: { buffer: Buffer; filename: string }[] = [];
+
+        for (const fileId of message.file_ids) {
+          console.log(`${this.LOG_PREFIX} ${emoji('📥')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Downloading file: ${fileId}`.trim());
+          const fileData = await this.rightClient.downloadFile(fileId);
+
+          if (fileData) {
+            filesToUpload.push(fileData);
+            console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Downloaded file: ${fileData.filename}`.trim());
+          } else {
+            console.log(`${this.LOG_PREFIX} ${emoji('❌')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Failed to download file: ${fileId}`.trim());
+          }
+        }
+
+        if (filesToUpload.length > 0) {
+          console.log(`${this.LOG_PREFIX} ${emoji('📤')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Uploading ${filesToUpload.length} file(s) to target server...`.trim());
+          uploadedFileIds = await this.leftClient.uploadMultipleFiles(filesToUpload, targetChannelId);
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Successfully uploaded ${uploadedFileIds.length} file(s)`.trim());
+        }
+      }
+
+      // Create minimal attachment with profile picture
+      const attachment = createMessageAttachment(
+        message,
+        this.config.right,
+        sourceChannelName,
+        profilePictureUrl,
+        this.config.footerIcon,
+        this.config
+      );
+
+      if (this.config.dryRun) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Would post to (${targetChannelName})[${targetChannelId}] on ${this.config.left.name}:`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Author: ${attachment.author_name}`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('📝')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Message: ${attachment.text}`.trim());
+        this.trackBridgeEvent('message_dry_run_reverse');
+      } else {
+        // Post message with attachment and files to left server
+        await this.leftClient.postMessageWithAttachment(
+          targetChannelId,
+          '',
+          attachment,
+          uploadedFileIds.length > 0 ? uploadedFileIds : undefined
+        );
+
+        const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${targetChannelId}] on ${this.config.left.name}${fileInfo}`.trim());
+
+        this.trackBridgeEvent('message_bridged_reverse');
+      }
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Error bridging message:`.trim(), error);
+    } finally {
+      this.logBuffer.clearChannelContext('current');
+      this.logBuffer.clearUserContext('current');
+    }
+  }
+
+  private async handleRightMessageEdit(message: MattermostMessage, sourceChannelId: string): Promise<void> {
+    // Note: Message edit tracking for bidirectional mode would require a separate reverse messageIdMap
+    // For now, we'll just log that edits from right→left are not fully supported
+    console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[REVERSE] Message edits from right→left are not yet fully supported (message ${message.id})`.trim());
+    this.trackBridgeEvent('message_edit_unsupported_reverse');
+  }
+
   private trackLeftEvent(eventType: string): void {
     this.leftEvents.set(eventType, (this.leftEvents.get(eventType) || 0) + 1);
   }
@@ -521,9 +683,10 @@ export class MattermostBridge {
       console.log(`${this.LOG_PREFIX} ${emoji('📊')}${summaryText}`.trim());
       
       // Force reconnection if WebSocket is in a bad state
-      if (!wsHealth || wsHealth === 'CLOSED' || wsHealth === 'CLOSING') {
+      if (!wsHealth || wsHealth === 'CLOSED' || wsHealth === 'CLOSING' || wsHealth.startsWith('CONNECTING')) {
+        const isStuckConnecting = wsHealth?.startsWith('CONNECTING');
         console.log(`${this.LOG_PREFIX} ${emoji('🔄')}Forcing WebSocket reconnection due to bad state: ${wsHealth || 'null'}`.trim());
-        this.leftClient.forceReconnect();
+        this.leftClient.forceReconnect(isStuckConnecting ? true : false);
       }
     } else {
       const sections = [];
@@ -553,6 +716,21 @@ export class MattermostBridge {
     this.leftEvents.clear();
     this.bridgeEvents.clear();
     this.lastEventSummaryTime = now;
+
+    // Write health file for Docker healthcheck
+    this.writeHealthFile();
+  }
+
+  private writeHealthFile(): void {
+    try {
+      const wsHealth = this.leftClient.getWebSocketHealth();
+      const health = {
+        timestamp: Date.now(),
+        wsState: wsHealth || 'disconnected'
+      };
+      const healthPath = path.join(process.cwd(), 'data', 'health.json');
+      fs.writeFileSync(healthPath, JSON.stringify(health));
+    } catch { /* noop — health file is best-effort */ }
   }
 
   private generateEventSummary(events: Map<string, number>, prefix: string): string {

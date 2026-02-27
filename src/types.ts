@@ -39,6 +39,7 @@ export interface Config {
   leftMessageEmoji?: string; // Emoji to add to original message after bridging
   catchUp: CatchUpConfig; // Message catch-up configuration
   requestAcknowledgement: boolean; // Enable acknowledgement button on messages
+  bridgeDirection: 'unidirectional' | 'bidirectional'; // Bridge direction control
 }
 
 export interface CatchUpConfig {

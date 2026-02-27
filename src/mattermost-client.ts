@@ -34,6 +34,8 @@ export class MattermostClient {
   // Manage reconnection and intentional closes to avoid loops
   private reconnectTimer: NodeJS.Timeout | null = null;
   private intentionallyClosing: boolean = false;
+  private connectingTimeout: NodeJS.Timeout | null = null;
+  private wsConnectingStartTime: number = 0;
   
   // Cache for channel information to avoid repeated API calls
   private channelCache: Map<string, ChannelInfo> = new Map();
@@ -789,6 +791,20 @@ export class MattermostClient {
       perMessageDeflate: false
     });
 
+    // Track when we entered CONNECTING state
+    this.wsConnectingStartTime = Date.now();
+
+    // Safety net: if still CONNECTING after 30s, force-close the socket
+    if (this.connectingTimeout) clearTimeout(this.connectingTimeout);
+    this.connectingTimeout = setTimeout(() => {
+      this.connectingTimeout = null;
+      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+        console.error(`${this.LOG_PREFIX} ❌ [${this.config.name}] WebSocket stuck in CONNECTING for 30s — force-closing`);
+        try { this.ws.close(); } catch { /* noop */ }
+        try { this.ws.terminate(); } catch { /* noop */ }
+      }
+    }, 30000);
+
     // Capture this connection's ID to detect stale events from prior sockets
     const connectionIdForHandlers = this.wsConnectionId;
 
@@ -801,6 +817,13 @@ export class MattermostClient {
         return;
       }
       console.log(`${this.LOG_PREFIX} 🔌 [${this.config.name}] WebSocket OPENED (Connection ID: ${this.wsConnectionId})`);
+
+      // Clear CONNECTING timeout and start time
+      if (this.connectingTimeout) {
+        clearTimeout(this.connectingTimeout);
+        this.connectingTimeout = null;
+      }
+      this.wsConnectingStartTime = 0;
 
       // Try to enable OS-level TCP keepalive on the raw socket if available
       try {
@@ -836,6 +859,16 @@ export class MattermostClient {
           `${this.LOG_PREFIX} ❌ [${this.config.name}] WebSocket unexpected-response: ` +
           `status=${res?.statusCode}, headers=${JSON.stringify(res?.headers || {})}`
         );
+      } catch { /* noop */ }
+
+      // Drain the response body so the socket can be freed
+      try { res?.resume?.(); } catch { /* noop */ }
+
+      // Close the socket so the 'close' event fires and triggers reconnection
+      try {
+        if (this.ws && connectionIdForHandlers === this.wsConnectionId) {
+          this.ws.close();
+        }
       } catch { /* noop */ }
     });
 
@@ -1160,43 +1193,58 @@ export class MattermostClient {
     if (!this.ws) return null;
     const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
     const state = states[this.ws.readyState] || `UNKNOWN(${this.ws.readyState})`;
-    
-    // Add health info based on last message time
+
     const now = Date.now();
+
+    // Show how long we've been stuck in CONNECTING
+    if (state === 'CONNECTING' && this.wsConnectingStartTime > 0) {
+      const elapsed = Math.round((now - this.wsConnectingStartTime) / 1000);
+      return `CONNECTING (${elapsed}s)`;
+    }
+
+    // Add health info based on last message time
     const timeSinceLastMessage = now - this.lastMessageTime;
     if (state === 'OPEN' && timeSinceLastMessage > 120000) { // 2 minutes
       return `${state} (stale: ${Math.round(timeSinceLastMessage/1000)}s)`;
     }
-    
+
     return state;
   }
 
-  forceReconnect(): void {
-    console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] FORCE RECONNECT requested (Current connection: ${this.wsConnectionId})`);
-    
-    // Only force reconnect if we're not already connecting
-    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+  forceReconnect(force: boolean = false): void {
+    console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] FORCE RECONNECT requested (Current connection: ${this.wsConnectionId}, force=${force})`);
+
+    // Only skip if we're already connecting AND caller didn't pass force=true
+    if (!force && this.ws && this.ws.readyState === WebSocket.CONNECTING) {
       console.log(`${this.LOG_PREFIX} ⚠️ [${this.config.name}] Already connecting, skipping force reconnect`);
       return;
     }
-    
+
+    // Clear CONNECTING timeout
+    if (this.connectingTimeout) {
+      clearTimeout(this.connectingTimeout);
+      this.connectingTimeout = null;
+    }
+    this.wsConnectingStartTime = 0;
+
     if (this.ws) {
       console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Closing existing WebSocket (ID: ${this.wsConnectionId})`);
       this.intentionallyClosing = true;
       this.ws.removeAllListeners();
-      this.ws.close();
+      try { this.ws.close(); } catch { /* noop — socket may be in bad state */ }
+      try { this.ws.terminate(); } catch { /* noop */ }
       this.ws = null;
     }
-    
+
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
     // Reset reconnect attempts to allow force reconnection
     this.reconnectAttempts = 0;
-    
+
     // Reconnect with existing channels and handler
     if (this.monitoredChannels.size > 0 && this.messageHandler) {
       console.log(`${this.LOG_PREFIX} 🔄 [${this.config.name}] Starting forced reconnection in 1 second...`);
@@ -1301,6 +1349,11 @@ export class MattermostClient {
 
   async disconnect(): Promise<void> {
     this.stopHeartbeat();
+    if (this.connectingTimeout) {
+      clearTimeout(this.connectingTimeout);
+      this.connectingTimeout = null;
+    }
+    this.wsConnectingStartTime = 0;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
