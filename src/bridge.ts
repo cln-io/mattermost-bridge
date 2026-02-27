@@ -725,7 +725,7 @@ export class MattermostBridge {
   }
 
   private startHealthServer(): void {
-    const port = 3000;
+    const port = parseInt(process.env.HEALTH_PORT || '3000', 10);
     this.healthServer = http.createServer((req, res) => {
       if (req.method === 'GET' && req.url === '/health') {
         const wsState = this.leftClient.getWebSocketHealth();
@@ -741,6 +741,10 @@ export class MattermostBridge {
         res.writeHead(404);
         res.end();
       }
+    });
+    this.healthServer.on('error', (err: NodeJS.ErrnoException) => {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Health server failed: ${err.message}`.trim());
+      this.healthServer = null;
     });
     this.healthServer.listen(port, () => {
       console.log(`${this.LOG_PREFIX} ${emoji('🏥')}Health endpoint listening on port ${port}`.trim());

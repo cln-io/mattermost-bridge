@@ -8,6 +8,9 @@ jest.mock('../src/mattermost-client');
 jest.mock('../src/heartbeat-service');
 jest.mock('../src/message-attachment');
 
+// Use random port for health server to avoid EADDRINUSE in tests
+process.env.HEALTH_PORT = '0';
+
 describe('MattermostBridge', () => {
   let bridge: MattermostBridge;
   let config: Config;
@@ -53,6 +56,7 @@ describe('MattermostBridge', () => {
       dontForwardFor: ['@example.com'],
       footerIcon: 'https://icon.example.com/footer.png',
       requestAcknowledgement: false,
+      bridgeDirection: 'unidirectional' as const,
       catchUp: {
         enabled: false,
         maxMessagesToRecover: 100
