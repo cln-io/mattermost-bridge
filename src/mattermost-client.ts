@@ -463,12 +463,11 @@ export class MattermostClient {
         updateData.props = props;
       }
 
-      // Add metadata for acknowledgement if requested
+      // Add priority with acknowledgement if requested
       if (requestAck) {
-        updateData.metadata = {
-          priority: {
-            requested_ack: true
-          }
+        updateData.priority = {
+          priority: 'important',
+          requested_ack: true
         };
       }
 
@@ -601,12 +600,11 @@ export class MattermostClient {
         postData.file_ids = fileIds;
       }
 
-      // Add metadata for acknowledgement if requested
+      // Add priority with acknowledgement if requested
       if (requestAck) {
-        postData.metadata = {
-          priority: {
-            requested_ack: true
-          }
+        postData.priority = {
+          priority: 'important',
+          requested_ack: true
         };
       }
 
