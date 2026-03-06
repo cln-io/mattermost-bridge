@@ -285,9 +285,11 @@ describe('MattermostClient', () => {
         message: '',
         props: { attachments: [attachment] },
         file_ids: ['file1', 'file2'],
-        priority: {
-          priority: 'important',
-          requested_ack: true
+        metadata: {
+          priority: {
+            priority: '',
+            requested_ack: true
+          }
         }
       });
     });
@@ -333,9 +335,11 @@ describe('MattermostClient', () => {
         id: 'post123',
         message: 'Updated text',
         props: props,
-        priority: {
-          priority: 'important',
-          requested_ack: true
+        metadata: {
+          priority: {
+            priority: '',
+            requested_ack: true
+          }
         }
       });
     });

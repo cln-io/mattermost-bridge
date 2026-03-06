@@ -465,9 +465,11 @@ export class MattermostClient {
 
       // Add priority with acknowledgement if requested
       if (requestAck) {
-        updateData.priority = {
-          priority: 'important',
-          requested_ack: true
+        updateData.metadata = {
+          priority: {
+            priority: '',
+            requested_ack: true
+          }
         };
       }
 
@@ -602,9 +604,11 @@ export class MattermostClient {
 
       // Add priority with acknowledgement if requested
       if (requestAck) {
-        postData.priority = {
-          priority: 'important',
-          requested_ack: true
+        postData.metadata = {
+          priority: {
+            priority: '',
+            requested_ack: true
+          }
         };
       }
 
