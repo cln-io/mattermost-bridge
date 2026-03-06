@@ -118,15 +118,22 @@ export class MattermostClient {
         this.token = this.config.botToken;
         this.api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
 
-        // Get bot user info
-        const response = await this.api.get('/users/me');
-        this.userId = response.data.id;
+        // Verify bot token by fetching user info
+        try {
+          const response = await this.api.get('/users/me');
+          this.userId = response.data.id;
 
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully authenticated to ${this.config.name} as bot: ${response.data.username}`.trim());
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}Successfully authenticated to ${this.config.name} as bot: ${response.data.username}`.trim());
 
-        // Bot accounts don't have status channel updates
-        if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination) {
-          console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
+          // Bot accounts don't have status channel updates
+          if (this.loggingConfig.statsChannelUpdates !== 'none' && this.isDestination) {
+            console.log(`${this.LOG_PREFIX} ${emoji('🤖')}[${this.config.name}] Bot account detected - status channel updates disabled`.trim());
+          }
+        } catch (error: any) {
+          if (error.response?.status === 401) {
+            throw new Error(`Bot token for ${this.config.name} is invalid or expired. Please generate a new token in Mattermost.`);
+          }
+          throw error;
         }
 
         return;
@@ -235,9 +242,12 @@ export class MattermostClient {
         console.log(`${this.LOG_PREFIX} ${emoji('ℹ️')}[${this.config.name}] Status channel updates disabled (STATS_CHANNEL_UPDATES=none)`.trim());
       }
     } catch (error: any) {
-      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Login failed for ${this.config.name}:`.trim(), error.response?.data || error.message);
-      if (this.config.mfaSeed && error.response?.status === 401) {
-        console.error(`${this.LOG_PREFIX} ${emoji('💡')}[${this.config.name}] Hint: Check if MFA seed is correct and TOTP code is valid`.trim());
+      const detail = error.response?.data?.message || error.message;
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}Login failed for ${this.config.name}: ${detail}`.trim());
+      if (this.config.botToken && error.response?.status === 401) {
+        console.error(`${this.LOG_PREFIX} ${emoji('💡')}[${this.config.name}] Hint: Bot token is invalid or expired — regenerate it in Mattermost`.trim());
+      } else if (this.config.mfaSeed && error.response?.status === 401) {
+        console.error(`${this.LOG_PREFIX} ${emoji('💡')}[${this.config.name}] Hint: Check if MFA seed is correct and server time is in sync`.trim());
       }
       throw error;
     }
