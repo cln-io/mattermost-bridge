@@ -103,7 +103,7 @@ export async function main() {
       await bridge.stop();
     }
     const nextAttempt = attempt + 1;
-    const delayS = Math.min(Math.pow(2, attempt) * 5, MAX_RESTART_DELAY_S);
+    const delayS = Math.min(Math.pow(2, attempt) * 30, MAX_RESTART_DELAY_S);
     console.error(`${LOG_PREFIX} ${emoji('⏳')}Startup failure #${nextAttempt} — waiting ${delayS}s before exiting...`.trim());
     saveRestartAttempt(nextAttempt);
     await new Promise(resolve => setTimeout(resolve, delayS * 1000));

@@ -181,11 +181,10 @@ export class MattermostClient {
         } catch (error: any) {
           lastError = error;
 
-          // Check if this is an invalid MFA token error (401)
+          // Check if this is a 401 that could be an MFA timing issue
           const is401 = error.response?.status === 401;
-          const isInvalidMFA = is401 && error.response?.data?.message?.toLowerCase().includes('mfa');
 
-          if (isInvalidMFA && loginAttempt < maxAttempts && this.config.mfaSeed) {
+          if (is401 && loginAttempt < maxAttempts && this.config.mfaSeed) {
             // First attempt failed - wait for TOTP to refresh
             const timeRemaining = 30 - (Math.floor(Date.now() / 1000) % 30);
             const waitTime = timeRemaining + 1; // Wait for next TOTP code + 1 second buffer
