@@ -193,6 +193,7 @@ echo ""
 
 echo -e "${BLUE}Starting $MM1_NAME (left) on port $MM1_PORT${NC}"
 docker run --name $MM1_NAME -d \
+    --platform linux/amd64 \
     --publish $MM1_PORT:8065 \
     --add-host dockerhost:127.0.0.1 \
     --env MM_SERVICESETTINGS_ENABLELOCALMODE=true \
@@ -200,6 +201,7 @@ docker run --name $MM1_NAME -d \
 
 echo -e "${BLUE}Starting $MM2_NAME (right) on port $MM2_PORT${NC}"
 docker run --name $MM2_NAME -d \
+    --platform linux/amd64 \
     --publish $MM2_PORT:8065 \
     --add-host dockerhost:127.0.0.1 \
     --env MM_SERVICESETTINGS_ENABLELOCALMODE=true \
@@ -430,6 +432,9 @@ TIMEZONE=UTC
 
 # Log messages without posting to target (for testing)
 DRY_RUN=false
+
+# Preserve thread structure when bridging replies
+FOLLOW_THREADS=true
 
 # ===========================================
 # Message Customization (Optional)

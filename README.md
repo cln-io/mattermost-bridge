@@ -47,6 +47,7 @@ The bridge listens for messages on a source channel and forwards them to a targe
 - **Email domain filtering** - Exclude messages from specific email domains
 - **Minimal attachments** - Clean, baby blue message formatting with profile pictures
 - **Message catch-up** - Automatically recover missed messages when bridge restarts (with Docker volume persistence)
+- **Thread following** - Replies to threads are threaded on the target side too. If the root message was deleted on the target, a placeholder root is automatically created with context from the original
 
 ## Quick Start
 
@@ -111,6 +112,9 @@ TARGET_CHANNEL_ID=xyz789uvw012...
 | **Bridge Configuration** |
 | `SOURCE_CHANNEL_ID` | ID of the channel(s) to monitor. Can be a single ID or comma-separated list | ✅ | - | `abc123def456...` or `abc123,def456,ghi789` |
 | `TARGET_CHANNEL_ID` | ID of the channel to post to | ✅ | - | `xyz789uvw012...` |
+| `FOLLOW_THREADS` | Preserve thread structure when bridging replies. If the root message was deleted on the target, a placeholder root is created | ❌ | `false` | `true` |
+| `BRIDGE_DIRECTION` | Direction of message bridging | ❌ | `unidirectional` | `bidirectional` |
+| `REQUEST_ACKNOWLEDGEMENT` | Add ACK button to bridged messages (requires Enterprise license) | ❌ | `false` | `true` |
 | **Logging & Display** |
 | `LOG_LEVEL` | Logging verbosity level | ❌ | `info` | `debug`, `info`, `warn`, `error` |
 | `DEBUG_WEBSOCKET_EVENTS` | Enable detailed WebSocket event logging | ❌ | `false` | `true` |

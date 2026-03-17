@@ -587,7 +587,7 @@ export class MattermostClient {
   }
 
 
-  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[], requestAck?: boolean): Promise<any> {
+  async postMessageWithAttachment(channelId: string, message: string, attachment: MessageAttachment, fileIds?: string[], requestAck?: boolean, rootId?: string): Promise<any> {
     try {
       const postData: any = {
         channel_id: channelId,
@@ -596,6 +596,11 @@ export class MattermostClient {
           attachments: [attachment]
         }
       };
+
+      // Add thread root_id if provided (for threading replies)
+      if (rootId) {
+        postData.root_id = rootId;
+      }
 
       // Add file IDs if provided
       if (fileIds && fileIds.length > 0) {
@@ -969,7 +974,8 @@ export class MattermostClient {
             username:   user.username,
             nickname:   user.nickname || undefined,
             create_at:  post.create_at,
-            file_ids:   post.file_ids || []
+            file_ids:   post.file_ids || [],
+            root_id:    post.root_id || undefined
           };
 
           if (this.loggingConfig.debugWebSocketEvents) {
@@ -1045,7 +1051,8 @@ export class MattermostClient {
               nickname:   user.nickname || undefined,
               create_at:  post.create_at,
               edit_at:    post.edit_at,
-              file_ids:   post.file_ids || []
+              file_ids:   post.file_ids || [],
+              root_id:    post.root_id || undefined
             };
 
             if (this.loggingConfig.debugWebSocketEvents) {
@@ -1509,7 +1516,8 @@ export class MattermostClient {
           nickname: user.nickname || undefined,
           create_at: post.create_at,
           edit_at: post.edit_at,
-          file_ids: post.file_ids || []
+          file_ids: post.file_ids || [],
+          root_id: post.root_id || undefined
         });
       }
       

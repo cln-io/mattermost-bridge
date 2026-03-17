@@ -60,7 +60,8 @@ describe('MattermostBridge', () => {
       catchUp: {
         enabled: false,
         maxMessagesToRecover: 100
-      }
+      },
+      followThreads: false
     };
 
     mockLeftClient = new MattermostClient(config.left, config.logging) as jest.Mocked<MattermostClient>;
@@ -326,7 +327,8 @@ describe('MattermostBridge', () => {
         '',
         expect.any(Object),
         ['newfile1', 'newfile2'],
-        false
+        false,
+        undefined
       );
     });
 
@@ -687,23 +689,291 @@ describe('MattermostBridge', () => {
           statsChannelUpdates: 'summary' as const
         }
       };
-      
+
       const summaryBridge = new MattermostBridge(summaryConfig);
       await summaryBridge.start();
-      
+
       // Create a mock for the logEventSummary method by triggering it manually
       // We can't directly access private methods, but we can test the flow through the timer
-      
+
       // Verify that the bridge uses postOrUpdateBridgeSummary instead of postMessage
       const logEventSummary = (summaryBridge as any).logEventSummary;
       if (logEventSummary) {
         await logEventSummary.call(summaryBridge);
-        
+
         // Should use the update method, not create new messages
         expect(mockRightClient.postOrUpdateBridgeSummary).toHaveBeenCalled();
       }
-      
+
       await summaryBridge.stop();
+    });
+  });
+
+  describe('thread following', () => {
+    let handleMessage: (message: MattermostMessage) => Promise<void>;
+    let threadBridge: MattermostBridge;
+
+    const sourceChannelInfo: ChannelInfo = {
+      id: 'source123',
+      name: 'source-channel',
+      displayName: 'Source Channel',
+      type: 'O'
+    };
+
+    const targetChannelInfo: ChannelInfo = {
+      id: 'target456',
+      name: 'target-channel',
+      displayName: 'Target Channel',
+      type: 'O'
+    };
+
+    beforeEach(async () => {
+      threadBridge = new MattermostBridge({ ...config, followThreads: true });
+
+      mockLeftClient.ping.mockResolvedValue();
+      mockRightClient.ping.mockResolvedValue();
+      mockLeftClient.login.mockResolvedValue();
+      mockRightClient.login.mockResolvedValue();
+      mockLeftClient.getChannelById.mockResolvedValue(sourceChannelInfo);
+      mockRightClient.getChannelById.mockResolvedValue(targetChannelInfo);
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
+        handleMessage = onMsg;
+      });
+      mockHeartbeatService.start.mockImplementation();
+
+      await threadBridge.start();
+
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'user123',
+        username: 'testuser',
+        email: 'testuser@allowed.com'
+      });
+      mockLeftClient.downloadProfilePicture.mockResolvedValue(Buffer.from('img'));
+      mockRightClient.uploadProfilePicture.mockResolvedValue('https://right.com/profile.png');
+      (createMessageAttachment as jest.Mock).mockReturnValue({
+        color: '#87CEEB',
+        author_name: 'testuser',
+        text: 'Test message'
+      });
+    });
+
+    afterEach(async () => {
+      await threadBridge.stop();
+    });
+
+    it('should thread a reply when root message was previously bridged', async () => {
+      // First bridge the root message
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_root_1' });
+
+      const rootMessage: MattermostMessage = {
+        id: 'source_root_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Root message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      };
+      await handleMessage(rootMessage);
+
+      // Now bridge a reply to that root
+      mockRightClient.getPost.mockResolvedValue({ id: 'target_root_1', message: 'Root message' });
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
+
+      const replyMessage: MattermostMessage = {
+        id: 'source_reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Reply message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'source_root_1'
+      };
+      await handleMessage(replyMessage);
+
+      // Verify the reply was posted with root_id
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenLastCalledWith(
+        'target456',
+        '',
+        expect.any(Object),
+        undefined,
+        false,
+        'target_root_1'
+      );
+    });
+
+    it('should create placeholder root when target root was deleted', async () => {
+      // First bridge the root message
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_root_1' });
+
+      const rootMessage: MattermostMessage = {
+        id: 'source_root_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Root message that will be deleted',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      };
+      await handleMessage(rootMessage);
+
+      // Simulate: target root was deleted (getPost returns delete_at)
+      mockRightClient.getPost.mockResolvedValue({ id: 'target_root_1', delete_at: Date.now() });
+      // Source root still exists
+      mockLeftClient.getPost.mockResolvedValue({ id: 'source_root_1', message: 'Root message that will be deleted' });
+      // Placeholder creation
+      mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_root_1' });
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
+
+      const replyMessage: MattermostMessage = {
+        id: 'source_reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Reply to deleted thread',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'source_root_1'
+      };
+      await handleMessage(replyMessage);
+
+      // Verify placeholder was created
+      expect(mockRightClient.postMessage).toHaveBeenCalledWith(
+        'target456',
+        expect.stringContaining('[Thread continued]')
+      );
+
+      // Verify reply was threaded under the placeholder
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenLastCalledWith(
+        'target456',
+        '',
+        expect.any(Object),
+        undefined,
+        false,
+        'placeholder_root_1'
+      );
+    });
+
+    it('should post as top-level when root was never bridged (pre-bridge)', async () => {
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
+
+      const replyMessage: MattermostMessage = {
+        id: 'source_reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Reply to unknown thread',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'unknown_root'
+      };
+      await handleMessage(replyMessage);
+
+      // Verify it was posted without root_id (top-level)
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalledWith(
+        'target456',
+        '',
+        expect.any(Object),
+        undefined,
+        false,
+        undefined
+      );
+    });
+
+    it('should not thread replies when followThreads is disabled', async () => {
+      // Create bridge with followThreads=false
+      const noThreadBridge = new MattermostBridge({ ...config, followThreads: false });
+      let noThreadHandler: (message: MattermostMessage) => Promise<void>;
+
+      mockLeftClient.connectWebSocket.mockImplementation((channelIds, onMsg) => {
+        noThreadHandler = onMsg;
+      });
+
+      await noThreadBridge.start();
+
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_1' });
+
+      // Bridge root first
+      await noThreadHandler!({
+        id: 'source_root_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Root message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      });
+
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_2' });
+
+      // Bridge a reply
+      await noThreadHandler!({
+        id: 'source_reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Reply message',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'source_root_1'
+      });
+
+      // Verify NO threading happened (root_id should be undefined)
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenLastCalledWith(
+        'target456',
+        '',
+        expect.any(Object),
+        undefined,
+        false,
+        undefined
+      );
+
+      // Should NOT have tried to look up the post
+      expect(mockRightClient.getPost).not.toHaveBeenCalled();
+
+      await noThreadBridge.stop();
+    });
+
+    it('should include source root context in placeholder when target root is deleted', async () => {
+      // Bridge root first
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_root_1' });
+      await handleMessage({
+        id: 'source_root_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'A very long root message that exceeds one hundred characters so we can verify truncation works correctly here in this test',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: []
+      });
+
+      // Target root deleted
+      mockRightClient.getPost.mockResolvedValue({ id: 'target_root_1', delete_at: Date.now() });
+      // Source root still available - with long message
+      mockLeftClient.getPost.mockResolvedValue({
+        id: 'source_root_1',
+        message: 'A very long root message that exceeds one hundred characters so we can verify truncation works correctly here in this test'
+      });
+      mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_1' });
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
+
+      await handleMessage({
+        id: 'source_reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Reply',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'source_root_1'
+      });
+
+      // Verify placeholder contains truncated original message
+      expect(mockRightClient.postMessage).toHaveBeenCalledWith(
+        'target456',
+        expect.stringContaining('...')
+      );
     });
   });
 });

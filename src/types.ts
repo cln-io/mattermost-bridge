@@ -40,6 +40,7 @@ export interface Config {
   catchUp: CatchUpConfig; // Message catch-up configuration
   requestAcknowledgement: boolean; // Enable acknowledgement button on messages
   bridgeDirection: 'unidirectional' | 'bidirectional'; // Bridge direction control
+  followThreads: boolean; // Preserve thread structure when bridging replies
 }
 
 export interface CatchUpConfig {
@@ -58,6 +59,7 @@ export interface MattermostMessage {
   create_at: number;
   edit_at?: number; // Timestamp when message was edited
   file_ids?: string[]; // File attachment IDs
+  root_id?: string; // Parent thread message ID (empty string or absent for root messages)
 }
 
 export interface Channel {

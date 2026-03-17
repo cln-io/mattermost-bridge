@@ -325,6 +325,12 @@ export class MattermostBridge {
         this.config
       );
       
+      // Resolve target thread root_id if this is a reply and thread following is enabled
+      let targetRootId: string | undefined;
+      if (this.config.followThreads && message.root_id) {
+        targetRootId = await this.resolveTargetThreadRoot(message.root_id, sourceChannelName, sourceChannelId);
+      }
+
       if (this.config.dryRun) {
         console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Would post to (${targetChannelName})[${this.targetChannelId}] on ${this.config.right.name}:`.trim());
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Author: ${attachment.author_name}`.trim());
@@ -333,21 +339,25 @@ export class MattermostBridge {
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Color: ${attachment.color} (baby blue)`.trim());
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Profile Picture: ${attachment.author_icon || 'none'}`.trim());
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Footer Icon: ${attachment.footer_icon || 'none'}`.trim());
+        if (targetRootId) {
+          console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Thread Root: ${targetRootId}`.trim());
+        }
         if (uploadedFileIds.length > 0) {
           console.log(`${this.LOG_PREFIX} ${emoji('📝')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] File Attachments: ${uploadedFileIds.length} file(s)`.trim());
         }
         console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}(${sourceChannelName})[${sourceChannelId}] [DRY RUN] Message NOT sent (dry-run mode)`.trim());
-        
+
         // Track dry run event for status updates
         this.trackBridgeEvent('message_dry_run');
       } else {
-        // Post message with attachment and files
+        // Post message with attachment and files (threaded if applicable)
         const postedMessage = await this.rightClient.postMessageWithAttachment(
           this.targetChannelId,
           '', // Empty main message text
           attachment,
           uploadedFileIds.length > 0 ? uploadedFileIds : undefined,
-          this.config.requestAcknowledgement
+          this.config.requestAcknowledgement,
+          targetRootId
         );
         
         // Store the message ID mapping
@@ -365,7 +375,8 @@ export class MattermostBridge {
         }
         
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}(${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${this.targetChannelId}] on ${this.config.right.name}${fileInfo}`.trim());
+        const threadInfo = targetRootId ? ` (threaded under ${targetRootId})` : '';
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}(${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${this.targetChannelId}] on ${this.config.right.name}${fileInfo}${threadInfo}`.trim());
         
         // Add emoji reaction to original message if configured
         if (this.config.leftMessageEmoji) {
@@ -385,6 +396,70 @@ export class MattermostBridge {
       this.logBuffer.clearChannelContext('current');
       this.logBuffer.clearUserContext('current');
     }
+  }
+
+  /**
+   * Resolves the target thread root_id for a reply message.
+   * If the root message was bridged, returns the target root message ID.
+   * If the target root was deleted, creates a placeholder root and returns its ID.
+   * If the root was never bridged (pre-bridge), returns undefined (posts as top-level).
+   */
+  private async resolveTargetThreadRoot(
+    sourceRootId: string,
+    sourceChannelName: string,
+    sourceChannelId: string,
+    direction: 'forward' | 'reverse' = 'forward'
+  ): Promise<string | undefined> {
+    const dirLabel = direction === 'reverse' ? '[REVERSE] ' : '';
+    const targetClient = direction === 'forward' ? this.rightClient : this.leftClient;
+    const sourceClient = direction === 'forward' ? this.leftClient : this.rightClient;
+    const targetChannelId = direction === 'forward' ? this.targetChannelId : this.sourceChannelIds[0];
+
+    // Look up the target message that corresponds to the source root
+    const targetRootId = this.messageIdMap.get(sourceRootId);
+
+    if (!targetRootId) {
+      console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Thread root ${sourceRootId} was not bridged (pre-bridge message) - posting as top-level`.trim());
+      return undefined;
+    }
+
+    // Verify the target root message still exists (may have been deleted)
+    const targetPost = await targetClient.getPost(targetRootId);
+
+    if (targetPost && !targetPost.delete_at) {
+      console.log(`${this.LOG_PREFIX} ${emoji('🧵')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Threading reply under target root ${targetRootId}`.trim());
+      return targetRootId;
+    }
+
+    // Target root was deleted - create a placeholder root message
+    console.log(`${this.LOG_PREFIX} ${emoji('🔄')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Target root ${targetRootId} was deleted - creating placeholder thread root`.trim());
+
+    // Try to get the original source root message for context
+    const sourceRoot = await sourceClient.getPost(sourceRootId);
+    let placeholderText: string;
+    if (sourceRoot && sourceRoot.message) {
+      const truncated = sourceRoot.message.length > 100
+        ? sourceRoot.message.substring(0, 100) + '...'
+        : sourceRoot.message;
+      placeholderText = `**[Thread continued]** Original message was deleted on this side.\n> ${truncated}`;
+    } else {
+      placeholderText = `**[Thread continued]** Original message was deleted on this side.`;
+    }
+
+    try {
+      const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText);
+      if (placeholderPost && placeholderPost.id) {
+        // Update the mapping to point to the new placeholder
+        this.messageIdMap.set(sourceRootId, placeholderPost.id);
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Created placeholder root ${placeholderPost.id} for deleted thread`.trim());
+        return placeholderPost.id;
+      }
+    } catch (error) {
+      console.error(`${this.LOG_PREFIX} ${emoji('❌')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Failed to create placeholder root:`.trim(), error);
+    }
+
+    // Fall back to posting as top-level if placeholder creation failed
+    return undefined;
   }
 
   private async handleMessageEdit(message: MattermostMessage, sourceChannelId: string): Promise<void> {
@@ -587,22 +662,39 @@ export class MattermostBridge {
         this.config
       );
 
+      // Resolve target thread root_id if this is a reply and thread following is enabled (reverse direction)
+      let targetRootId: string | undefined;
+      if (this.config.followThreads && message.root_id) {
+        targetRootId = await this.resolveTargetThreadRoot(message.root_id, sourceChannelName, sourceChannelId, 'reverse');
+      }
+
       if (this.config.dryRun) {
         console.log(`${this.LOG_PREFIX} ${emoji('🏃‍♂️')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Would post to (${targetChannelName})[${targetChannelId}] on ${this.config.left.name}:`.trim());
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Author: ${attachment.author_name}`.trim());
         console.log(`${this.LOG_PREFIX} ${emoji('📝')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Message: ${attachment.text}`.trim());
+        if (targetRootId) {
+          console.log(`${this.LOG_PREFIX} ${emoji('📝')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] [DRY RUN] Thread Root: ${targetRootId}`.trim());
+        }
         this.trackBridgeEvent('message_dry_run_reverse');
       } else {
-        // Post message with attachment and files to left server
-        await this.leftClient.postMessageWithAttachment(
+        // Post message with attachment and files to left server (threaded if applicable)
+        const postedMessage = await this.leftClient.postMessageWithAttachment(
           targetChannelId,
           '',
           attachment,
-          uploadedFileIds.length > 0 ? uploadedFileIds : undefined
+          uploadedFileIds.length > 0 ? uploadedFileIds : undefined,
+          false, // no ACK for reverse
+          targetRootId
         );
 
+        // Store the reverse message ID mapping
+        if (postedMessage && postedMessage.id) {
+          this.messageIdMap.set(message.id, postedMessage.id);
+        }
+
         const fileInfo = uploadedFileIds.length > 0 ? ` with ${uploadedFileIds.length} file(s)` : '';
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${targetChannelId}] on ${this.config.left.name}${fileInfo}`.trim());
+        const threadInfo = targetRootId ? ` (threaded under ${targetRootId})` : '';
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}[REVERSE] (${sourceChannelName})[${sourceChannelId}] Message bridged to (${targetChannelName})[${targetChannelId}] on ${this.config.left.name}${fileInfo}${threadInfo}`.trim());
 
         this.trackBridgeEvent('message_bridged_reverse');
       }

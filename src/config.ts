@@ -133,6 +133,14 @@ export function loadConfig(): Config {
     console.log(`${LOG_PREFIX} ${emoji('✅')}Request acknowledgement disabled (REQUEST_ACKNOWLEDGEMENT not set)`.trim());
   }
 
+  // Parse follow threads configuration
+  const followThreads = process.env.FOLLOW_THREADS === 'true';
+  if (followThreads) {
+    console.log(`${LOG_PREFIX} ${emoji('🧵')}Thread following ENABLED - replies will be threaded on the target side`.trim());
+  } else {
+    console.log(`${LOG_PREFIX} ${emoji('🧵')}Thread following disabled (FOLLOW_THREADS not set to 'true')`.trim());
+  }
+
   // Log information about the new attachment-based system
   console.log(`${LOG_PREFIX} ${emoji('📎')}Using minimal baby blue attachments with profile pictures`.trim());
   console.log(`${LOG_PREFIX} ${emoji('🖼️')}Profile pictures will be downloaded from source and uploaded to target`.trim());
@@ -216,6 +224,7 @@ export function loadConfig(): Config {
       persistencePath: catchUpPath,
       maxMessagesToRecover: maxMessagesToRecover
     },
-    bridgeDirection: bridgeDirection
+    bridgeDirection: bridgeDirection,
+    followThreads: followThreads
   };
 }
