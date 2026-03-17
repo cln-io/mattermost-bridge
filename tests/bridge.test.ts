@@ -855,14 +855,26 @@ describe('MattermostBridge', () => {
       );
     });
 
-    it('should post as top-level when root was never bridged (pre-bridge)', async () => {
+    it('should create placeholder when root was never bridged (filtered/pre-bridge)', async () => {
+      // Source root exists but was never bridged (e.g. filtered by email domain)
+      mockLeftClient.getPost.mockResolvedValue({
+        id: 'unknown_root',
+        user_id: 'filtered_user',
+        message: 'Message from filtered user'
+      });
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'filtered_user',
+        username: 'filtered-person',
+        email: 'filtered@excluded.com'
+      });
+      mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_1' });
       mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
 
       const replyMessage: MattermostMessage = {
         id: 'source_reply_1',
         channel_id: 'source123',
         user_id: 'user123',
-        message: 'Reply to unknown thread',
+        message: 'Reply to filtered thread',
         username: 'testuser',
         create_at: Date.now(),
         file_ids: [],
@@ -870,14 +882,78 @@ describe('MattermostBridge', () => {
       };
       await handleMessage(replyMessage);
 
-      // Verify it was posted without root_id (top-level)
-      expect(mockRightClient.postMessageWithAttachment).toHaveBeenCalledWith(
+      // Verify placeholder was created with "Thread started by" text
+      expect(mockRightClient.postMessage).toHaveBeenCalledWith(
+        'target456',
+        expect.stringContaining('[Thread started by @filtered-person]')
+      );
+
+      // Verify reply was threaded under the placeholder
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenLastCalledWith(
         'target456',
         '',
         expect.any(Object),
         undefined,
         false,
-        undefined
+        'placeholder_1'
+      );
+    });
+
+    it('should reuse placeholder for multiple replies to same unbridged root', async () => {
+      // Source root exists but was never bridged
+      mockLeftClient.getPost.mockResolvedValue({
+        id: 'unbridged_root',
+        user_id: 'filtered_user',
+        message: 'Filtered root'
+      });
+      mockLeftClient.getUser.mockResolvedValue({
+        id: 'filtered_user',
+        username: 'filtered-person',
+        email: 'filtered@excluded.com'
+      });
+      mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_1' });
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
+
+      // First reply - should create placeholder
+      await handleMessage({
+        id: 'reply_1',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'First reply',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'unbridged_root'
+      });
+
+      expect(mockRightClient.postMessage).toHaveBeenCalledTimes(1);
+
+      // Second reply - should reuse the placeholder (now mapped), not create another
+      mockRightClient.getPost.mockResolvedValue({ id: 'placeholder_1', message: 'placeholder' });
+      mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_2' });
+
+      await handleMessage({
+        id: 'reply_2',
+        channel_id: 'source123',
+        user_id: 'user123',
+        message: 'Second reply',
+        username: 'testuser',
+        create_at: Date.now(),
+        file_ids: [],
+        root_id: 'unbridged_root'
+      });
+
+      // postMessage should still only have been called once (for the first placeholder)
+      expect(mockRightClient.postMessage).toHaveBeenCalledTimes(1);
+
+      // Second reply should thread under the existing placeholder
+      expect(mockRightClient.postMessageWithAttachment).toHaveBeenLastCalledWith(
+        'target456',
+        '',
+        expect.any(Object),
+        undefined,
+        false,
+        'placeholder_1'
       );
     });
 

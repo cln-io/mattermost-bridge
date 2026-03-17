@@ -400,9 +400,10 @@ export class MattermostBridge {
 
   /**
    * Resolves the target thread root_id for a reply message.
-   * If the root message was bridged, returns the target root message ID.
+   * If the root message was bridged and exists, returns the target root message ID.
    * If the target root was deleted, creates a placeholder root and returns its ID.
-   * If the root was never bridged (pre-bridge), returns undefined (posts as top-level).
+   * If the root was never bridged (filtered or pre-bridge), creates a placeholder root
+   * from the source root message so thread context is preserved.
    */
   private async resolveTargetThreadRoot(
     sourceRootId: string,
@@ -418,40 +419,70 @@ export class MattermostBridge {
     // Look up the target message that corresponds to the source root
     const targetRootId = this.messageIdMap.get(sourceRootId);
 
-    if (!targetRootId) {
-      console.log(`${this.LOG_PREFIX} ${emoji('⚠️')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Thread root ${sourceRootId} was not bridged (pre-bridge message) - posting as top-level`.trim());
-      return undefined;
+    if (targetRootId) {
+      // Verify the target root message still exists (may have been deleted)
+      const targetPost = await targetClient.getPost(targetRootId);
+
+      if (targetPost && !targetPost.delete_at) {
+        console.log(`${this.LOG_PREFIX} ${emoji('🧵')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Threading reply under target root ${targetRootId}`.trim());
+        return targetRootId;
+      }
+
+      // Target root was deleted
+      console.log(`${this.LOG_PREFIX} ${emoji('🔄')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Target root ${targetRootId} was deleted - creating placeholder thread root`.trim());
+    } else {
+      // Root was never bridged (filtered user or pre-bridge message)
+      console.log(`${this.LOG_PREFIX} ${emoji('🔄')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Thread root ${sourceRootId} was not bridged - creating placeholder thread root`.trim());
     }
 
-    // Verify the target root message still exists (may have been deleted)
-    const targetPost = await targetClient.getPost(targetRootId);
+    // Create a placeholder root on the target side using the source root for context
+    return this.createPlaceholderRoot(sourceRootId, sourceChannelName, sourceChannelId, sourceClient, targetClient, targetChannelId, dirLabel, !targetRootId);
+  }
 
-    if (targetPost && !targetPost.delete_at) {
-      console.log(`${this.LOG_PREFIX} ${emoji('🧵')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Threading reply under target root ${targetRootId}`.trim());
-      return targetRootId;
-    }
-
-    // Target root was deleted - create a placeholder root message
-    console.log(`${this.LOG_PREFIX} ${emoji('🔄')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Target root ${targetRootId} was deleted - creating placeholder thread root`.trim());
-
+  /**
+   * Creates a placeholder root message on the target side when the original root
+   * is unavailable (deleted on target, or never bridged due to filtering/pre-bridge).
+   */
+  private async createPlaceholderRoot(
+    sourceRootId: string,
+    sourceChannelName: string,
+    sourceChannelId: string,
+    sourceClient: MattermostClient,
+    targetClient: MattermostClient,
+    targetChannelId: string,
+    dirLabel: string,
+    wasFiltered: boolean
+  ): Promise<string | undefined> {
     // Try to get the original source root message for context
     const sourceRoot = await sourceClient.getPost(sourceRootId);
     let placeholderText: string;
+
     if (sourceRoot && sourceRoot.message) {
       const truncated = sourceRoot.message.length > 100
         ? sourceRoot.message.substring(0, 100) + '...'
         : sourceRoot.message;
-      placeholderText = `**[Thread continued]** Original message was deleted on this side.\n> ${truncated}`;
+
+      if (wasFiltered) {
+        // Root was never bridged (filtered or pre-bridge) - show who started the thread
+        const rootUser = await sourceClient.getUser(sourceRoot.user_id).catch(() => null);
+        const authorName = rootUser?.username ? `@${rootUser.username}` : 'unknown user';
+        placeholderText = `**[Thread started by ${authorName}]** Original message was not bridged.\n> ${truncated}`;
+      } else {
+        // Root was bridged but deleted on target
+        placeholderText = `**[Thread continued]** Original message was deleted on this side.\n> ${truncated}`;
+      }
     } else {
-      placeholderText = `**[Thread continued]** Original message was deleted on this side.`;
+      placeholderText = wasFiltered
+        ? `**[Thread started]** Original message was not bridged.`
+        : `**[Thread continued]** Original message was deleted on this side.`;
     }
 
     try {
       const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText);
       if (placeholderPost && placeholderPost.id) {
-        // Update the mapping to point to the new placeholder
+        // Store the mapping so subsequent replies to the same thread reuse this placeholder
         this.messageIdMap.set(sourceRootId, placeholderPost.id);
-        console.log(`${this.LOG_PREFIX} ${emoji('✅')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Created placeholder root ${placeholderPost.id} for deleted thread`.trim());
+        console.log(`${this.LOG_PREFIX} ${emoji('✅')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Created placeholder root ${placeholderPost.id}`.trim());
         return placeholderPost.id;
       }
     } catch (error) {
