@@ -359,7 +359,7 @@ export class MattermostBridge {
           '', // Empty main message text
           attachment,
           uploadedFileIds.length > 0 ? uploadedFileIds : undefined,
-          this.config.requestAcknowledgement,
+          this.config.requestAcknowledgement && !targetRootId, // ACK only on root posts
           targetRootId
         );
         
