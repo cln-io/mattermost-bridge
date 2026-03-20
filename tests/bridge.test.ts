@@ -841,7 +841,8 @@ describe('MattermostBridge', () => {
       // Verify placeholder was created with author and preview
       expect(mockRightClient.postMessage).toHaveBeenCalledWith(
         'target456',
-        expect.stringContaining('Root message that will be deleted')
+        expect.stringContaining('Root message that will be deleted'),
+        false
       );
 
       // Verify reply was threaded under the placeholder
@@ -885,7 +886,8 @@ describe('MattermostBridge', () => {
       // Verify placeholder was created with author name
       expect(mockRightClient.postMessage).toHaveBeenCalledWith(
         'target456',
-        expect.stringContaining('@filtered-person')
+        expect.stringContaining('@filtered-person'),
+        false
       );
 
       // Verify reply was threaded under the placeholder
@@ -1049,7 +1051,8 @@ describe('MattermostBridge', () => {
       // Verify placeholder contains truncated original message
       expect(mockRightClient.postMessage).toHaveBeenCalledWith(
         'target456',
-        expect.stringContaining('...')
+        expect.stringContaining('...'),
+        false
       );
     });
   });

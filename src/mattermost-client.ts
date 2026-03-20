@@ -429,12 +429,21 @@ export class MattermostClient {
     }
   }
 
-  async postMessage(channelId: string, message: string): Promise<any> {
+  async postMessage(channelId: string, message: string, requestAck?: boolean): Promise<any> {
     try {
-      const response = await this.api.post('/posts', {
+      const postData: any = {
         channel_id: channelId,
         message: message
-      });
+      };
+      if (requestAck) {
+        postData.metadata = {
+          priority: {
+            priority: '',
+            requested_ack: true
+          }
+        };
+      }
+      const response = await this.api.post('/posts', postData);
       return response.data;
     } catch (error: any) {
       console.error(`${this.LOG_PREFIX} Error posting message:`, error.response?.data || error.message);

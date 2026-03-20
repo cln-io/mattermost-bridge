@@ -483,7 +483,7 @@ export class MattermostBridge {
       const placeholderText = preview ? `> **${author}:** ${preview}` : `> **${author}**`;
 
       try {
-        const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText);
+        const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText, this.config.requestAcknowledgement);
         if (placeholderPost && placeholderPost.id) {
           this.messageIdMap.set(sourceRootId, placeholderPost.id);
           console.log(`${this.LOG_PREFIX} ${emoji('✅')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Created placeholder root ${placeholderPost.id}`.trim());
@@ -496,7 +496,7 @@ export class MattermostBridge {
     }
 
     try {
-      const placeholderPost = await targetClient.postMessage(targetChannelId, '_Original message unavailable_');
+      const placeholderPost = await targetClient.postMessage(targetChannelId, '_Original message unavailable_', this.config.requestAcknowledgement);
       if (placeholderPost && placeholderPost.id) {
         // Store the mapping so subsequent replies to the same thread reuse this placeholder
         this.messageIdMap.set(sourceRootId, placeholderPost.id);
