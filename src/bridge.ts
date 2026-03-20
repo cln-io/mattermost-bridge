@@ -22,6 +22,9 @@ export class MattermostBridge {
   
   // Message ID mapping: source message ID -> target message ID
   private messageIdMap: Map<string, string> = new Map();
+
+  // In-flight placeholder creation promises to prevent duplicate placeholders
+  private pendingPlaceholders: Map<string, Promise<string | undefined>> = new Map();
   
   // Centralized event tracking
   private leftEvents: Map<string, number> = new Map();
@@ -435,8 +438,22 @@ export class MattermostBridge {
       console.log(`${this.LOG_PREFIX} ${emoji('🔄')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Thread root ${sourceRootId} was not bridged - creating placeholder thread root`.trim());
     }
 
+    // Check if a placeholder is already being created for this root (race condition guard)
+    const pending = this.pendingPlaceholders.get(sourceRootId);
+    if (pending) {
+      console.log(`${this.LOG_PREFIX} ${emoji('⏳')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Waiting for in-flight placeholder for root ${sourceRootId}`.trim());
+      return pending;
+    }
+
     // Create a placeholder root on the target side using the source root for context
-    return this.createPlaceholderRoot(sourceRootId, sourceChannelName, sourceChannelId, sourceClient, targetClient, targetChannelId, dirLabel, !targetRootId);
+    const placeholderPromise = this.createPlaceholderRoot(sourceRootId, sourceChannelName, sourceChannelId, sourceClient, targetClient, targetChannelId, dirLabel, !targetRootId);
+    this.pendingPlaceholders.set(sourceRootId, placeholderPromise);
+
+    try {
+      return await placeholderPromise;
+    } finally {
+      this.pendingPlaceholders.delete(sourceRootId);
+    }
   }
 
   /**
@@ -455,30 +472,31 @@ export class MattermostBridge {
   ): Promise<string | undefined> {
     // Try to get the original source root message for context
     const sourceRoot = await sourceClient.getPost(sourceRootId);
-    let placeholderText: string;
 
-    if (sourceRoot && sourceRoot.message) {
-      const truncated = sourceRoot.message.length > 100
-        ? sourceRoot.message.substring(0, 100) + '...'
-        : sourceRoot.message;
+    // Build a small plain-text placeholder: just "@author: preview..."
+    if (sourceRoot) {
+      const rootUser = await sourceClient.getUser(sourceRoot.user_id).catch(() => null);
+      const author = rootUser?.username ? `@${rootUser.username}` : 'unknown';
+      const preview = sourceRoot.message
+        ? (sourceRoot.message.length > 100 ? sourceRoot.message.substring(0, 100) + '...' : sourceRoot.message)
+        : '';
+      const placeholderText = preview ? `> **${author}:** ${preview}` : `> **${author}**`;
 
-      if (wasFiltered) {
-        // Root was never bridged (filtered or pre-bridge) - show who started the thread
-        const rootUser = await sourceClient.getUser(sourceRoot.user_id).catch(() => null);
-        const authorName = rootUser?.username ? `@${rootUser.username}` : 'unknown user';
-        placeholderText = `**[Thread started by ${authorName}]** Original message was not bridged.\n> ${truncated}`;
-      } else {
-        // Root was bridged but deleted on target
-        placeholderText = `**[Thread continued]** Original message was deleted on this side.\n> ${truncated}`;
+      try {
+        const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText);
+        if (placeholderPost && placeholderPost.id) {
+          this.messageIdMap.set(sourceRootId, placeholderPost.id);
+          console.log(`${this.LOG_PREFIX} ${emoji('✅')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Created placeholder root ${placeholderPost.id}`.trim());
+          return placeholderPost.id;
+        }
+      } catch (error) {
+        console.error(`${this.LOG_PREFIX} ${emoji('❌')}${dirLabel}(${sourceChannelName})[${sourceChannelId}] Failed to create placeholder root:`.trim(), error);
       }
-    } else {
-      placeholderText = wasFiltered
-        ? `**[Thread started]** Original message was not bridged.`
-        : `**[Thread continued]** Original message was deleted on this side.`;
+      return undefined;
     }
 
     try {
-      const placeholderPost = await targetClient.postMessage(targetChannelId, placeholderText);
+      const placeholderPost = await targetClient.postMessage(targetChannelId, '_Original message unavailable_');
       if (placeholderPost && placeholderPost.id) {
         // Store the mapping so subsequent replies to the same thread reuse this placeholder
         this.messageIdMap.set(sourceRootId, placeholderPost.id);

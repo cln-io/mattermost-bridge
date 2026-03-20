@@ -821,7 +821,7 @@ describe('MattermostBridge', () => {
       // Simulate: target root was deleted (getPost returns delete_at)
       mockRightClient.getPost.mockResolvedValue({ id: 'target_root_1', delete_at: Date.now() });
       // Source root still exists
-      mockLeftClient.getPost.mockResolvedValue({ id: 'source_root_1', message: 'Root message that will be deleted' });
+      mockLeftClient.getPost.mockResolvedValue({ id: 'source_root_1', user_id: 'user123', message: 'Root message that will be deleted' });
       // Placeholder creation
       mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_root_1' });
       mockRightClient.postMessageWithAttachment.mockResolvedValue({ id: 'target_reply_1' });
@@ -838,10 +838,10 @@ describe('MattermostBridge', () => {
       };
       await handleMessage(replyMessage);
 
-      // Verify placeholder was created
+      // Verify placeholder was created with author and preview
       expect(mockRightClient.postMessage).toHaveBeenCalledWith(
         'target456',
-        expect.stringContaining('[Thread continued]')
+        expect.stringContaining('Root message that will be deleted')
       );
 
       // Verify reply was threaded under the placeholder
@@ -882,10 +882,10 @@ describe('MattermostBridge', () => {
       };
       await handleMessage(replyMessage);
 
-      // Verify placeholder was created with "Thread started by" text
+      // Verify placeholder was created with author name
       expect(mockRightClient.postMessage).toHaveBeenCalledWith(
         'target456',
-        expect.stringContaining('[Thread started by @filtered-person]')
+        expect.stringContaining('@filtered-person')
       );
 
       // Verify reply was threaded under the placeholder
@@ -1029,6 +1029,7 @@ describe('MattermostBridge', () => {
       // Source root still available - with long message
       mockLeftClient.getPost.mockResolvedValue({
         id: 'source_root_1',
+        user_id: 'user123',
         message: 'A very long root message that exceeds one hundred characters so we can verify truncation works correctly here in this test'
       });
       mockRightClient.postMessage.mockResolvedValue({ id: 'placeholder_1' });
