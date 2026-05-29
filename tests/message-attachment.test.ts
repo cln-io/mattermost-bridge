@@ -186,6 +186,63 @@ describe('createMessageAttachment', () => {
     expect(attachment.author_link).toBe('https://source.mattermost.com/sourceteam/pl/msg123');
   });
 
+  it('should flatten bot props.attachments into text when message is empty', () => {
+    const botMessage: MattermostMessage = {
+      ...baseMessage,
+      message: '',
+      username: 'cti-bot',
+      props: {
+        attachments: [
+          {
+            title: 'Candiru Infrastructure – Sharing Actionable Information',
+            text: '[TLP:AMBER+STRICT]\nContext\nCandiru remains a significant threat.',
+            fields: [
+              { title: 'MISP Event UUID', value: '63547a65-06ae-4444-84ca-8da7d6f541fc' }
+            ]
+          }
+        ]
+      }
+    };
+
+    const attachment = createMessageAttachment(botMessage, sourceConfig, 'priv-eeas-general');
+
+    expect(attachment.text).toBe(
+      '**Candiru Infrastructure – Sharing Actionable Information**\n' +
+      '[TLP:AMBER+STRICT]\nContext\nCandiru remains a significant threat.\n' +
+      '**MISP Event UUID**\n63547a65-06ae-4444-84ca-8da7d6f541fc'
+    );
+    expect(attachment.fallback).toContain('Candiru Infrastructure');
+    expect(attachment.fallback).toContain('63547a65-06ae-4444-84ca-8da7d6f541fc');
+  });
+
+  it('should combine message text and props.attachments, message first', () => {
+    const mixedMessage: MattermostMessage = {
+      ...baseMessage,
+      message: 'See report below:',
+      props: {
+        attachments: [{ pretext: 'Heads up', text: 'Body content' }]
+      }
+    };
+
+    const attachment = createMessageAttachment(mixedMessage, sourceConfig, 'test-channel');
+
+    expect(attachment.text).toBe('See report below:\n\nHeads up\nBody content');
+  });
+
+  it('should leave text unchanged when there are no props', () => {
+    const attachment = createMessageAttachment(baseMessage, sourceConfig, 'test-channel');
+    expect(attachment.text).toBe('Test message content');
+  });
+
+  it('should ignore empty props.attachments array', () => {
+    const emptyAttachments: MattermostMessage = {
+      ...baseMessage,
+      props: { attachments: [] }
+    };
+    const attachment = createMessageAttachment(emptyAttachments, sourceConfig, 'test-channel');
+    expect(attachment.text).toBe('Test message content');
+  });
+
   it('should format time correctly for different hours', () => {
     // Test morning time
     const morningMessage = {

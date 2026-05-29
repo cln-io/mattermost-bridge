@@ -60,6 +60,7 @@ export interface MattermostMessage {
   edit_at?: number; // Timestamp when message was edited
   file_ids?: string[]; // File attachment IDs
   root_id?: string; // Parent thread message ID (empty string or absent for root messages)
+  props?: any; // Post props (bot/webhook messages carry their body in props.attachments)
 }
 
 export interface Channel {

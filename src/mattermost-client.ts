@@ -984,7 +984,8 @@ export class MattermostClient {
             nickname:   user.nickname || undefined,
             create_at:  post.create_at,
             file_ids:   post.file_ids || [],
-            root_id:    post.root_id || undefined
+            root_id:    post.root_id || undefined,
+            props:      post.props
           };
 
           if (this.loggingConfig.debugWebSocketEvents) {
@@ -1061,7 +1062,8 @@ export class MattermostClient {
               create_at:  post.create_at,
               edit_at:    post.edit_at,
               file_ids:   post.file_ids || [],
-              root_id:    post.root_id || undefined
+              root_id:    post.root_id || undefined,
+              props:      post.props
             };
 
             if (this.loggingConfig.debugWebSocketEvents) {
@@ -1526,7 +1528,8 @@ export class MattermostClient {
           create_at: post.create_at,
           edit_at: post.edit_at,
           file_ids: post.file_ids || [],
-          root_id: post.root_id || undefined
+          root_id: post.root_id || undefined,
+          props: post.props
         });
       }
       
